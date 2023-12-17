@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+    <title>Cannon Ball</title>
+</head>
+
+<body>
+    <canvas id = "scene" style = "border:2px solid"></canvas>
+    <script>
+        let canvas = document.getElementById("scene");
+        let context = canvas.getContext("2d");
+
+        canvas.width = window.innerWidth - 20;
+        canvas.height = window.innerHeight - 100;
+
+        let simulation_size = 20.0;
+        let scale = Math.min(canvas.width, canvas.height) / simulation_size;
+        let simulation_width = canvas.width / scale;
+        let simulation_height = canvas.height / scale;
+
+        function x_from_simulation_to_canvas(x) { return x * scale; }
+        function y_from_simulation_to_canvas(y) { return canvas.height - y * scale; }
+
+        let gravity = {x: 0.0, y: -10.0};
+        let time_step = 1.0 / 60.0;
+
+        let ball = {
+            radius: 0.2,
+            position: {x: 0.2, y: 0.2},
+            velocity: {x: 10.0, y: 15.0},
+        };
+
+        function draw_ball()
+        {
+            context.beginPath();
+
+            context.arc(
+                x_from_simulation_to_canvas(ball.position.x),
+                y_from_simulation_to_canvas(ball.position.y),
+                ball.radius * scale,
+                0.0,
+                2.0 * Math.PI,
+            )
+
+            context.closePath();
+        }
+
+        function draw_scene()
+        {
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            context.fillStyle = "#FF0000";
+
+            draw_ball();
+
+            context.fill();
+        }
+
+        function simulate()
+        {
+            ball.velocity.x += gravity.x * time_step;
+            ball.velocity.y += gravity.y * time_step;
+            ball.position.x += ball.velocity.x * time_step;
+            ball.position.y += ball.velocity.y * time_step;
+
+            if (ball.position.x < 0.0) {
+                ball.position.x = 0.0;
+                ball.velocity.x = -ball.velocity.x;
+            }
+            if (ball.position.x > simulation_width) {
+                ball.position.x = simulation_width;
+                ball.velocity.x = -ball.velocity.x;
+            }
+            if (ball.position.y < 0.0) {
+                ball.position.y = 0.0;
+                ball.velocity.y = -ball.velocity.y;
+            }
+        }
+
+        function update()
+        {
+            simulate();
+            draw_scene();
+            requestAnimationFrame(update);
+        };
+
+        update();
+    </script>
+</body>
+
+</html>
