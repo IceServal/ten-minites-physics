@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+    <meta charset = "UTF-8" name = "viewport" content = "width = device-width, initial-scale = 1.0">
+
+    <head>
+        <title>Pinball</title>
+        <style>
+            body {
+                font-family: "Cascadia Code";
+                font-size: 15px;
+            };
+            .button {
+                background-color: #606060;
+                border: none;
+                color: white;
+                padding: 10px 32px;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+            };
+        </style>
+    </head>
+
+    <body>
+        <button type = "button" id = "button-restart" onclick = "restart()" class = "button">Restart</button>
+        <button type = "button" id = "button-pause"   onclick = "pause()"   class = "button">Pause</button>
+        Score <span id = "score">0</span>
+
+        <br>
+
+        <canvas id = "canvas"></canvas>
+        <script src = "../utility/math/vector.js"></script>
+        <script src = "../utility/math/tool.js"></script>
+        <script src = "../utility/canvas.js"></script>
+        <script src = "../utility/shape/ball.js"></script>
+        <script src = "../utility/shape/flipper.js"></script>
+        <script src = "../utility/physics/collision.js"></script>
+        <script>
+            let canvas_size = new Vector2(window.innerWidth - 20, window.innerHeight - 100);
+            let canvas_to_world_scale = 1.7 / canvas_size.y;
+            let world_size = canvas_size.clone().scale(canvas_to_world_scale);
+
+            let plotting_scale = new Plotting_Scale(world_size, canvas_size, 1.0 / canvas_to_world_scale, false);
+            let canvas = new Canvas(document.getElementById("canvas"), canvas_size, plotting_scale);
+
+            let board = {
+                score: 0,
+            };
+
+            let world = {
+                paused: false,
+
+                gravity: new Vector2(0.0, -3.0),
+                planck_time: 1.0 / 60.0,
+
+                border_vertices: [],
+                balls: [],
+                obstacles: [],
+                flippers: [],
+
+                _pull: function(object) {
+                    if (object.velocity) object.velocity.add(world.gravity, world.planck_time);
+                },
+
+                update: function () {
+                    if (world.paused) return;
+
+                    let balls = world.balls;
+                    for (let i = 0; i < balls.length; i++) world._pull(balls[i]);
+
+                    let flippers = world.flippers;
+                    for (let i = 0; i < flippers.length; i++) flippers[i].act(world.planck_time);
+                    for (let i = 0; i < balls.length; i++) balls[i].act(world.planck_time);
+
+                    let obstacles = world.obstacles;
+                    for (let i = 0; i < balls.length; i++) {
+                        let ball = balls[i];
+                        ball_border_collide(ball, world.border_vertices);
+                        for (let j = 0; j < obstacles.length; j++) {
+                            if (ball_obstacle_collide(ball, obstacles[j])) board.score++;
+                        }
+                        for (let j = 0; j < flippers.length;  j++) ball_flipper_collide(ball, flippers[j]);
+                        for (let j = i + 1; j < balls.length; j++) ball_ball_collide(ball, balls[j]);
+                    }
+
+                    document.getElementById("score").innerHTML = board.score.toString();
+                },
+
+                render: function () {
+                    if (world.paused) return;
+
+                    canvas.clear();
+                    canvas.render_line_strip(world.border_vertices, 0.005, "#000000");
+                    for (let i = 0; i < world.obstacles.length; i++) {
+                        let obstacle = world.obstacles[i]
+                        canvas.render_circle(obstacle.position, obstacle.radius, "#FF8000")
+                    }
+                    for (let i = 0; i < world.flippers.length; i++) {
+                        let flipper = world.flippers[i];
+                        let angle = flipper.rest_angle + flipper.sign_of_angular_velocity * flipper.rotation;
+                        canvas.render_capsule(flipper.position, angle, flipper.radius, flipper.length, "#FF0000");
+                    }
+                    for (let i = 0; i < world.balls.length; i++) {
+                        let ball = world.balls[i]
+                        canvas.render_circle(ball.position, ball.radius, "#202020")
+                    }
+                },
+            };
+
+            function restart()
+            {
+                board.score = 0;
+                document.getElementById("score").innerHTML = board.score.toString();
+
+                world.paused = false;
+                let button = document.getElementById("button-pause");
+                button.innerHTML = "Pause";
+
+                let offset = 0.02;
+                if (world.border_vertices.length == 0) {
+                    world.border_vertices.push(new Vector2(0.74,         0.25));
+                    world.border_vertices.push(new Vector2(1.0 - offset, 0.4));
+                    world.border_vertices.push(new Vector2(1.0 - offset, world_size.y - offset));
+                    world.border_vertices.push(new Vector2(offset,       world_size.y - offset));
+                    world.border_vertices.push(new Vector2(offset,       0.4));
+                    world.border_vertices.push(new Vector2(0.26,         0.25));
+                    world.border_vertices.push(new Vector2(0.26,         offset));
+                    world.border_vertices.push(new Vector2(0.74,         offset));
+                }
+
+                {
+                    let radius = 0.03;
+                    let mass = Math.PI * radius * radius;
+
+                    world.balls = [];
+                    world.balls.push(new Ball(
+                        radius,
+                        mass,
+                        new Vector2(0.92, 0.5),
+                        new Vector2(-0.5, 2.5),
+                        0.5,
+                    ));
+                    world.balls.push(new Ball(
+                        radius,
+                        mass,
+                        new Vector2(0.08, 0.5),
+                        new Vector2( 0.5, 2.5),
+                        0.5,
+                    ));
+                }
+
+                {
+                    world.obstacles = [];
+                    world.obstacles.push(new Obstacle(0.1,  new Vector2(0.25, 0.6), 1.2));
+                    world.obstacles.push(new Obstacle(0.1,  new Vector2(0.75, 0.5), 1.2));
+                    world.obstacles.push(new Obstacle(0.12, new Vector2(0.7,  1.0), 1.2));
+                    world.obstacles.push(new Obstacle(0.1,  new Vector2(0.2,  1.2), 1.2));
+                }
+
+                {
+                    let radius = 0.03;
+                    let length = 0.2;
+                    let rest_angle = 0.5;
+                    let max_rotation = 1.0;
+                    let angular_velocity = 10.0;
+                    let restitution = 0.2;
+
+                    world.flippers = [];
+                    world.flippers.push(new Flipper(
+                        radius,
+                        new Vector2(0.26, 0.22),
+                        length,
+                        -rest_angle,
+                        max_rotation,
+                        angular_velocity,
+                        restitution,
+                    ));
+                    world.flippers.push(new Flipper(
+                        radius,
+                        new Vector2(0.74, 0.22),
+                        length,
+                        Math.PI + rest_angle,
+                        max_rotation,
+                        -angular_velocity,
+                        restitution,
+                    ));
+                }
+            }
+
+            function pause()
+            {
+                world.paused = !world.paused;
+
+                let button = document.getElementById("button-pause");
+                button.innerHTML = (world.paused ? "Recover" : "Pause");
+            }
+
+            function update()
+            {
+                world.update();
+                world.render();
+
+                requestAnimationFrame(update);
+            }
+
+            restart();
+            update();
+
+            function try_to_select_flippers(event_x, event_y, identifier = 0)
+            {
+                let bounding_rect = canvas.canvas.getBoundingClientRect();
+                let hit_position = plotting_scale.canvas_to_world(new Vector2(
+                    event_x - bounding_rect.left,
+                    event_y - bounding_rect.top,
+                ));
+                for (let i = 0; i < world.flippers.length; i++) {
+                    let flipper = world.flippers[i];
+                    if (flipper.is_in_response_area(hit_position)) flipper.try_to_be_selected_by(identifier);
+                }
+            }
+
+            function on_touch_start(event)
+            {
+                for (let i = 0; i < event.touches.length; i++) {
+                    let touch = event.touches[i];
+                    try_to_select_flippers(touch.clientX, touch.clientY, touch.identifier);
+                }
+            }
+
+            function on_touch_end(event)
+            {
+                for (let i = 0; i < world.flippers.length; i++) {
+                    let flipper = world.flippers[i];
+                    if (!flipper.selected) continue;
+
+                    for (let j = 0; j < event.touches.length; j++) {
+                        let touch = event.touches[j];
+                        flipper.try_to_be_unselected_by(touch.identifier);
+                    }
+                }
+            }
+
+            function on_mouse_down(event)
+            {
+                try_to_select_flippers(event.clientX, event.clientY);
+            }
+
+            function on_mouse_up(event)
+            {
+                for (let i = 0; i < world.flippers.length; i++) world.flippers[i].try_to_be_unselected_by();
+            }
+
+            canvas.canvas.addEventListener("touchstart", on_touch_start, false);
+            canvas.canvas.addEventListener("touchend",   on_touch_end,   false);
+            canvas.canvas.addEventListener("mousedown",  on_mouse_down,  false);
+            canvas.canvas.addEventListener("mouseup",    on_mouse_up,    false);
+        </script>
+    </body>
+</html>
+
