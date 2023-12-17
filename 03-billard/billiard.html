@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang = "en">
+    <meta charset = "UTF-8" name = "viewport" content = "width = device-width, initial-scale = 1.0">
+
+    <head>
+        <title>Billiard</title>
+        <style>
+            body {
+                font-family: "Cascadia Code";
+                font-size: 15px;
+            }
+            .button {
+                background-color: #606060;
+                border: none;
+                color: white;
+                padding: 10px 32px;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+            }
+            .slider {
+                width: 80px;
+                height: 6px;
+                border-radius: 5px;
+                background: #d3d3d3;
+                outline: none;
+                opacity: 0.7;
+                transition: opacity .2s;
+            }
+        </style>
+    </head>
+
+    <body>
+        <button type = "button" class = "button" onclick = "restart()">Restart</button>
+        <label for = "restitution">Restitution</label>
+        <input type = "range" name = "restitution" id = "restitution" min = "0" max = "10" value = "10" class = "slider">
+
+        <br>
+
+        <canvas id = "canvas"></canvas>
+        <script src = "../utility/math/vector.js"></script>
+        <script src = "../utility/shape/ball.js"></script>
+        <script src = "../utility/physics/collision.js"></script>
+        <script>
+            let canvas = document.getElementById("canvas");
+            let context = canvas.getContext("2d");
+
+            canvas.width = window.innerWidth - 20;
+            canvas.height = window.innerHeight - 100;
+
+            let simulation_size = 2.0;
+            let simulation_scale = Math.min(canvas.width, canvas.height) / simulation_size;
+            let simulation_width = canvas.width / simulation_scale;
+            let simulation_height = canvas.height / simulation_scale;
+
+            let world = {
+                gravity: new Vector2(0.0, -1.0),
+                planck_time: 1.0 / 60.0,
+                size: new Vector2(simulation_width, simulation_height),
+                paused: true,
+                balls: [],
+            };
+
+            function from_world_to_canvas(a)
+            {
+                return new Vector2(simulation_scale * a.x, canvas.height - simulation_scale * a.y);
+            }
+
+            function restart()
+            {
+                world.balls = [];
+
+                for (let i = 0; i < 20; i++) {
+                    let radius = 0.05 + Math.random() * 0.1;
+                    let mass = Math.PI * radius * radius;
+                    let position = new Vector2(Math.random() * simulation_width, Math.random() * simulation_height);
+                    let velocity = new Vector2(-1.0 + 2.0 * Math.random(), -1.0 + 2.0 * Math.random());
+                    let restitution = 1.0;
+
+                    world.balls.push(new Ball(radius, mass, position, velocity, restitution));
+                }
+            }
+
+            function draw_ball(ball)
+            {
+                context.beginPath();
+
+                let position_in_canvas = from_world_to_canvas(ball.position);
+                context.arc(
+                    position_in_canvas.x,
+                    position_in_canvas.y,
+                    simulation_scale * ball.radius,
+                    0.0,
+                    2.0 * Math.PI,
+                )
+
+                context.closePath();
+                context.fill();
+            }
+
+            function draw_scene()
+            {
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                context.fillStyle = "#FF0000";
+
+                for (let i = 0; i < world.balls.length; i++) {
+                    draw_ball(world.balls[i]);
+                }
+            }
+
+            function collide_with_wall(a)
+            {
+                if (a.position.x < a.radius) {
+                    a.position.x = a.radius;
+                    a.velocity.x = -a.velocity.x;
+                }
+                if (a.position.x > world.size.x - a.radius) {
+                    a.position.x = world.size.x - a.radius;
+                    a.velocity.x = -a.velocity.x;
+                }
+                if (a.position.y < a.radius) {
+                    a.position.y = a.radius;
+                    a.velocity.y = -a.velocity.y;
+                }
+                if (a.position.y > world.size.y - a.radius) {
+                    a.position.y = world.size.y - a.radius;
+                    a.velocity.y = -a.velocity.y;
+                }
+            }
+
+            function drop(a)
+            {
+                a.velocity.add(world.gravity, world.planck_time);
+                a.position.add(a.velocity, world.planck_time);
+            }
+
+            function simulate()
+            {
+                let balls = world.balls;
+                let num_balls = balls.length;
+                for (let i = 0; i < num_balls; i++) {
+                    drop(balls[i]);
+                }
+                for (let i = 0; i < num_balls; i++) {
+                    for (let j = i + 1; j < num_balls; j++) {
+                        ball_ball_collide(balls[i], balls[j]);
+                    }
+                }
+                for (let i = 0; i < num_balls; i++) {
+                    collide_with_wall(balls[i]);
+                }
+            }
+
+            function update()
+            {
+                simulate();
+                draw_scene();
+
+                requestAnimationFrame(update);
+            }
+
+            restart();
+            update();
+
+            document.getElementById("restitution").oninput = function() {
+                for (let i = 0; i < world.balls.length; i++) world.balls[i].restitution = this.value / 10.0;
+            }
+        </script>
+    </body>
+</html>
+
