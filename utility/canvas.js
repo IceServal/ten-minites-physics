@@ -87,12 +87,17 @@ class Canvas
         this.context.lineWidth = old_width;
     }
 
-    _render_circle(center, radius)
+    _render_circle(center, radius, wireframe)
     {
         this.context.beginPath();
         this.context.arc(center.x, center.y, radius, 0.0, 2.0 * Math.PI);
         this.context.closePath();
-        this.context.fill();
+
+        if (wireframe) {
+            this.context.stroke();
+        } else {
+            this.context.fill();
+        }
     }
 
     render_circle(center, radius, color = "#FFFFFF")
@@ -101,7 +106,18 @@ class Canvas
         let r = this.plotting_scale.scale * radius;
 
         this.context.fillStyle = color;
-        this._render_circle(c, r);
+        this._render_circle(c, r, false);
+    }
+
+    render_wireframe_circle(center, radius, width, color = "#000000")
+    {
+        let c = this.plotting_scale.world_to_canvas(center);
+        let r = this.plotting_scale.scale * radius;
+        let w = this.plotting_scale.scale * width;
+
+        this.context.strokeStyle = color;
+        this.context.lineWidth = w;
+        this._render_circle(c, r, true);
     }
 
     render_capsule(position, angle, radius, length, color = "#FFFFFF")
