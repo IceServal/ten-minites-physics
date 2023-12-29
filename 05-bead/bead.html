@@ -26,146 +26,94 @@
         <button class = "button" type = "button" onclick = "run()">Run</button>
         <button class = "button" type = "button" onclick = "step()">Step</button>
 
-        <br>
-        PBD      Acceleration: <span id = "pbd-acceleration">0.000</span>
-        Analytic Acceleration: <span id = "analytic-acceleration">0.000</span>
+        <br> PBD Acceleration: <span id = "pbd-acceleration">0.000</span>
+        <br> Ana Acceleration: <span id = "ana-acceleration">0.000</span>
 
         <br>
         <canvas id = "canvas"></canvas>
         <script src = "../utility/math/vector.js"></script>
         <script src = "../utility/canvas.js"></script>
-        <script src = "../utility/shape/ball.js"></script>
+        <script src = "../utility/math/shape/circle.js"></script>
+        <script src = "../utility/physics/component/mass.js"></script>
+        <script src = "../utility/physics/rigid-body/disk.js"></script>
+        <script src = "../utility/physics/field/clear-acceleration.js"></script>
+        <script src = "../utility/physics/field/proportional-acceleration.js"></script>
+        <script src = "../utility/physics/constrain/pendulum.js"></script>
         <script>
             let min_simulation_size = 2.0;
-            let canvas_size = new Vector2(window.innerWidth - 20, window.innerHeight - 100);
+            let canvas_size = Vector2.from_components(window.innerWidth - 20, window.innerHeight - 100);
             let canvas_to_world_scale = min_simulation_size / Math.min(canvas_size.x, canvas_size.y);
             let world_size = canvas_size.clone().scale(canvas_to_world_scale);
 
-            let plotting_scale = new Plotting_Scale(world_size, canvas_size, 1.0 / canvas_to_world_scale, false);
-            let canvas = new Canvas(document.getElementById("canvas"), canvas_size, plotting_scale);
+            let plotting_scale = Plotting_Scale.from(world_size, canvas_size, 1.0 / canvas_to_world_scale);
+            let canvas = Canvas.from("canvas", plotting_scale);
 
             let world = {
                 paused: true,
 
-                gravity: new Vector2(0.0, -10.0),
-                planck_time: 1.0 / 60.0,
-
                 num_steps: 1000,
-                constrain: new Ball(
-                    min_simulation_size * 0.4,
-                    0.0,
-                    new Vector2(world_size.x / 2.0, world_size.y / 2.0),
-                    new Vector2(),
-                    0.0,
-                ),
-                pbd_bead: null,
-                analytic_bead: null,
+                planck_time: 1.0 / 60.0,
+                subjects: [],
+
+                clear: null,
+                gravity: null,
+                pbd_pendulum: null,
+                ana_pendulum: null,
 
                 update: function () {
                     if (world.paused) return;
 
                     let delta_time = world.planck_time / world.num_steps;
                     let pbd_acceleration = 0.0;
-                    let analytic_acceleration = 0.0;
+                    let ana_acceleration = 0.0;
+                    let pbd_disk = world.subjects[0];
+                    let ana_disk = world.subjects[1];
                     for (let i = 0; i < world.num_steps; i++) {
-                        pbd_acceleration = world.pbd_bead.simulate(delta_time);
-                        analytic_acceleration = world.analytic_bead.simulate(delta_time);
+                        world.clear.apply();
+                        world.gravity.apply();
+                        pbd_acceleration = world.pbd_pendulum.act_on(pbd_disk, delta_time);
+                        ana_acceleration = world.ana_pendulum.act_on(ana_disk, delta_time);
                     }
 
                     document.getElementById("pbd-acceleration").innerHTML = pbd_acceleration.toFixed(3);
-                    document.getElementById("analytic-acceleration").innerHTML = analytic_acceleration.toFixed(3);
+                    document.getElementById("ana-acceleration").innerHTML = ana_acceleration.toFixed(3);
                 },
 
                 render: function () {
                     canvas.clear();
-                    canvas.render_wireframe_circle(world.constrain.position, world.constrain.radius, 0.01, "#000000");
-                    canvas.render_circle(world.pbd_bead.position, world.pbd_bead.radius, "#FFFF00");
-                    canvas.render_circle(world.analytic_bead.position, world.analytic_bead.radius, "#00FFFF");
+                    canvas.render_wireframe_circle(world.pbd_pendulum.constrain, 0.01, "#000000");
+                    canvas.render_wireframe_circle(world.ana_pendulum.constrain, 0.01, "#000000");
+                    canvas.render_circle(world.subjects[0].body, "#FFFF00");
+                    canvas.render_circle(world.subjects[1].body, "#00FFFF");
                 },
-            };
-
-            class PBD_Bead
-            {
-                constructor(position, radius, mass, constrain, velocity)
-                {
-                    this.position = position.clone();
-                    this.radius = radius;
-                    this.mass = mass;
-                    this.constrain = constrain;
-                    this.velocity = velocity.clone();
-                }
-
-                simulate(delta_time)
-                {
-                    let last_position = this.position.clone();
-                    this.velocity.add(world.gravity, delta_time);
-                    this.position.add(this.velocity, delta_time);
-
-                    let wire_center = this.constrain.position;
-                    let direction = new Vector2().from_difference_of_vector2(this.position, wire_center);
-                    let length = direction.normalize();
-                    if (length == 0.0) return;
-
-                    let wire_radius = this.constrain.radius;
-                    this.position.from_vector2(wire_center).add(direction, wire_radius);
-                    this.velocity.from_difference_of_vector2(this.position, last_position).scale(1.0 / delta_time);
-
-                    let correction = length - wire_radius;
-                    let acceleration = correction / delta_time / delta_time;
-                    return acceleration;
-                }
-            };
-
-            class Analytic_Bead
-            {
-                constructor(angle, radius, mass, constrain, omega)
-                {
-                    this.angle = angle;
-                    this.radius = radius;
-                    this.mass = mass;
-                    this.constrain = constrain;
-                    this.omega = omega;
-
-                    this.position = new Vector2();
-                    this.update_position();
-                }
-
-                simulate(delta_time)
-                {
-                    let normal_direction = new Vector2().from_difference_of_vector2(this.position, this.constrain.position);
-                    normal_direction.normalize();
-                    let tangent_direction = normal_direction.perpendicular_one();
-                    let normal_gravity = world.gravity.dot(normal_direction);
-                    let tangent_gravity = world.gravity.dot(tangent_direction);
-                    let angular_acceleration = tangent_gravity / this.constrain.radius;
-                    this.omega += angular_acceleration * delta_time;
-                    this.angle += this.omega * delta_time;
-                    this.update_position();
-
-                    let acceleration = this.omega * this.omega * this.constrain.radius + normal_gravity;
-                    return acceleration;
-                }
-
-                update_position()
-                {
-                    let wire_center = this.constrain.position;
-                    let wire_radius = this.constrain.radius;
-                    this.position.x = wire_center.x + Math.cos(this.angle) * wire_radius;
-                    this.position.y = wire_center.y + Math.sin(this.angle) * wire_radius;
-                }
             };
 
             function restart()
             {
                 world.paused = true;
 
-                let position = new Vector2(world.constrain.position.x + world.constrain.radius, world.constrain.position.y);
+                world.clear = new Clear_Acceleration_Field();
+                world.gravity = Proportional_Acceleration_Field.from(Vector2.from_components(0.0, -10.0));
+
+                let constrain_circle = Circle.from(Vector2.from_components(world_size.x / 2.0, world_size.y / 2.0), min_simulation_size * 0.4);
+                world.pbd_pendulum = Pendulum.from(constrain_circle, Pendulum_Simulation_Mode.position_based_dynamic);
+                world.ana_pendulum = Pendulum.from(constrain_circle, Pendulum_Simulation_Mode.analytic);
+
+                let body_circle = constrain_circle.clone();
+                body_circle.center.x += body_circle.radius;
+                body_circle.set_radius(0.1);
                 let velocity = new Vector2();
-                world.pbd_bead = new PBD_Bead(position, 0.1, 1.0, world.constrain, velocity);
-                world.analytic_bead = new Analytic_Bead(0.0, 0.1, 1.0, world.constrain, 0.0);
+                let disk0 = Disk.from(body_circle, 0.0, velocity, 0.0);
+                let disk1 = Disk.from(body_circle, 0.0, velocity, 0.0);
+                world.subjects.push(disk0);
+                world.subjects.push(disk1);
+                world.clear.subjects.push(disk0);
+                world.clear.subjects.push(disk1);
+                world.gravity.subjects.push(disk0);
+                world.gravity.subjects.push(disk1);
 
                 document.getElementById("pbd-acceleration").innerHTML = 0.0.toFixed(3);
-                document.getElementById("analytic-acceleration").innerHTML = 0.0.toFixed(3);
+                document.getElementById("ana-acceleration").innerHTML = 0.0.toFixed(3);
             }
 
             function run()
@@ -180,16 +128,16 @@
                 world.paused = true;
             }
 
-            function update()
+            function mainloop()
             {
                 world.update();
                 world.render();
 
-                requestAnimationFrame(update);
+                requestAnimationFrame(mainloop);
             }
 
             restart();
-            update();
+            mainloop();
         </script>
     </body>
 </html>

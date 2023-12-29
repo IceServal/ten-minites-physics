@@ -1,84 +1,98 @@
 class Vector2
 {
-    constructor(x = 0.0, y = 0.0)
+    constructor()
     {
-        this.x = x;
-        this.y = y;
+        this.x = 0.0;
+        this.y = 0.0;
+    }
+
+    static from_components(x, y)
+    {
+        let result = new Vector2().set_components(x, y);
+        return result;
+    }
+
+    static from_sum_of(a, b)
+    {
+        let result = Vector2.from_components(a.x + b.x, a.y + b.y);
+        return result;
+    }
+
+    static from_difference_of(a, b)
+    {
+        let result = Vector2.from_components(a.x - b.x, a.y - b.y);
+        return result;
     }
 
     clone()
     {
-        return new Vector2(this.x, this.y);
+        let result = new Vector2().copy(this);
+        return result;
     }
 
     perpendicular_one()
     {
-        return new Vector2(-this.y, this.x);
+        let result = Vector2.from_components(-this.y, this.x);
+        return result;
     }
 
-    from_vector2(a)
+    copy(a)
     {
-        this.x = a.x;
-        this.y = a.y;
+        this.set_components(a.x, a.y);
         return this;
     }
 
-    from_sum_of_vector2(a, b)
+    set_components(x, y)
     {
-        this.x = a.x + b.x;
-        this.y = a.y + b.y;
+        this.x = x;
+        this.y = y;
         return this;
     }
 
-    from_difference_of_vector2(a, b)
+    add(a, scaling = 1.0)
     {
-        this.x = a.x - b.x;
-        this.y = a.y - b.y;
+        this.x += scaling * a.x;
+        this.y += scaling * a.y;
         return this;
     }
 
-    add(a, scale = 1.0)
+    subtract(a, scaling = 1.0)
     {
-        this.x += scale * a.x;
-        this.y += scale * a.y;
+        this.x -= scaling * a.x;
+        this.y -= scaling * a.y;
         return this;
     }
 
-    subtract(a, scale = 1.0)
+    scale(scaling)
     {
-        this.x -= scale * a.x;
-        this.y -= scale * a.y;
+        this.x *= scaling;
+        this.y *= scaling;
         return this;
-    }
-
-    scale(scale_)
-    {
-        this.x *= scale_;
-        this.y *= scale_;
-        return this;
-    }
-
-    dot(a)
-    {
-        return this.x * a.x + this.y * a.y;
-    }
-
-    length()
-    {
-        return Math.sqrt(this.dot(this));
-    }
-
-    distance_from(a)
-    {
-        return this.clone().subtract(a).length();
     }
 
     normalize()
     {
         let length = this.length();
-        if (length != 0) this.scale(1.0 / length);
-
+        if (length != 0.0) this.scale(1.0 / length);
         return length;
+    }
+
+    dot(a)
+    {
+        let result = this.x * a.x + this.y * a.y;
+        return result;
+    }
+
+    length()
+    {
+        let length = Math.sqrt(this.dot(this));
+        return length;
+    }
+
+    angle()
+    {
+        let angle = Math.atan2(this.y, this.x);
+        return angle;
     }
 };
 

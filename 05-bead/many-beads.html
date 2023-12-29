@@ -24,125 +24,101 @@
     <body>
         <button class = "button" type = "button" id = "button-restart" onclick = "restart()">Restart</button>
         <button class = "button" type = "button" id = "button-run" onclick = "pause_or_resume()">Run</button>
+        <button class = "button" type = "button" id = "button-change-mode" onclick = "change_mode()">Change Mode</button>
+
+        <br> Mode: <span id = "pendulum-mode">Position Based Dynamic</span>
 
         <br>
         <canvas id = "canvas"></canvas>
         <script src = "../utility/math/vector.js"></script>
         <script src = "../utility/canvas.js"></script>
-        <script src = "../utility/shape/ball.js"></script>
-        <script src = "../utility/physics/collision.js"></script>
+        <script src = "../utility/math/shape/circle.js"></script>
+        <script src = "../utility/physics/component/mass.js"></script>
+        <script src = "../utility/physics/rigid-body/disk.js"></script>
+        <script src = "../utility/physics/field/clear-acceleration.js"></script>
+        <script src = "../utility/physics/field/proportional-acceleration.js"></script>
+        <script src = "../utility/physics/constrain/pendulum.js"></script>
+        <script src = "../utility/physics/constrain/dynamic-collision.js"></script>
         <script>
             let min_simulation_size = 2.0;
-            let canvas_size = new Vector2(window.innerWidth - 20, window.innerHeight - 100);
+            let canvas_size = Vector2.from_components(window.innerWidth - 20, window.innerHeight - 100);
             let canvas_to_world_scale = min_simulation_size / Math.min(canvas_size.x, canvas_size.y);
             let world_size = canvas_size.clone().scale(canvas_to_world_scale);
 
-            let plotting_scale = new Plotting_Scale(world_size, canvas_size, 1.0 / canvas_to_world_scale, false);
-            let canvas = new Canvas(document.getElementById("canvas"), canvas_size, plotting_scale);
+            let plotting_scale = Plotting_Scale.from(world_size, canvas_size, 1.0 / canvas_to_world_scale, false);
+            let canvas = Canvas.from("canvas", plotting_scale);
 
             let world = {
                 paused: true,
 
-                gravity: new Vector2(0.0, -10.0),
-                planck_time: 1.0 / 60.0,
-
                 num_steps: 1000,
-                constrain: new Ball(
-                    min_simulation_size * 0.4,
-                    0.0,
-                    new Vector2(world_size.x / 2.0, world_size.y / 2.0),
-                    new Vector2(),
-                    0.0,
-                ),
-                pbd_beads: [],
+                planck_time: 1.0 / 60.0,
+                subjects: [],
+
+                clear: null,
+                gravity: null,
+                pendulum: null,
+                collision: null,
 
                 update: function () {
                     if (world.paused) return;
 
+                    let disks = world.disks;
                     let delta_time = world.planck_time / world.num_steps;
-                    let pbd_acceleration = 0.0;
-                    let analytic_acceleration = 0.0;
-                    let pbd_beads = world.pbd_beads;
                     for (let step = 0; step < world.num_steps; step++) {
-                        for (let i = 0; i < pbd_beads.length; ++i) {
-                            pbd_beads[i].simulate(delta_time);
-                        }
-                        for (let i = 0; i < pbd_beads.length; ++i) {
-                            for (let j = i + 1; j < pbd_beads.length; ++j) {
-                                ball_ball_collide(pbd_beads[i], pbd_beads[j]);
-                            }
-                        }
+                        world.collision.apply();
+                        world.clear.apply();
+                        world.gravity.apply();
+                        world.pendulum.apply(delta_time);
                     }
                 },
 
                 render: function () {
                     canvas.clear();
-                    canvas.render_wireframe_circle(world.constrain.position, world.constrain.radius, 0.01, "#000000");
-                    for (let i = 0; i < world.pbd_beads.length; i++) {
-                        let pbd_bead = world.pbd_beads[i];
-                        canvas.render_circle(pbd_bead.position, pbd_bead.radius, "#FFFF00");
-                    }
+                    canvas.render_wireframe_circle(world.pendulum.constrain, 0.01, "#000000");
+                    canvas.render_circle(world.subjects[0].body, "#FF0000");
+                    canvas.render_circle(world.subjects[1].body, "#00FF00");
+                    canvas.render_circle(world.subjects[2].body, "#0000FF");
+                    canvas.render_circle(world.subjects[3].body, "#FFFF00");
+                    canvas.render_circle(world.subjects[4].body, "#00FFFF");
                 },
-            };
-
-            class PBD_Bead
-            {
-                constructor(position, radius, mass, constrain, velocity, restitution)
-                {
-                    this.position = position.clone();
-                    this.radius = radius;
-                    this.mass = mass;
-                    this.constrain = constrain;
-                    this.velocity = velocity.clone();
-                    this.restitution = restitution;
-                }
-
-                simulate(delta_time)
-                {
-                    let last_position = this.position.clone();
-                    this.velocity.add(world.gravity, delta_time);
-                    this.position.add(this.velocity, delta_time);
-
-                    let wire_center = this.constrain.position;
-                    let direction = new Vector2().from_difference_of_vector2(this.position, wire_center);
-                    let length = direction.normalize();
-                    if (length == 0.0) return;
-
-                    let wire_radius = this.constrain.radius;
-                    this.position.from_vector2(wire_center).add(direction, wire_radius);
-                    this.velocity.from_difference_of_vector2(this.position, last_position).scale(1.0 / delta_time);
-
-                    let correction = length - wire_radius;
-                    let acceleration = correction / delta_time / delta_time;
-                    return acceleration;
-                }
             };
 
             function restart()
             {
                 world.paused = true;
+                world.subjects = [];
 
-                let button = document.getElementById("button-run");
-                button.innerHTML = "Run";
-
-                world.pbd_beads = [];
+                let constrain_circle = Circle.from(Vector2.from_components(world_size.x / 2.0, world_size.y / 2.0), min_simulation_size * 0.4);
+                world.pendulum = Pendulum.from(constrain_circle, Pendulum_Simulation_Mode.position_based_dynamic);
+                world.clear = new Clear_Acceleration_Field();
+                world.gravity = Proportional_Acceleration_Field.from(Vector2.from_components(0.0, -10.0));
+                world.collision = new Dynamic_Collision();
 
                 let angle = 0.0;
-                let position = new Vector2();
-                let radius = 0.1;
-                let mass = 0.0;
+                let radius = 0.0;
+                let body_circle = Circle.from(new Vector2(), 0.0);
                 let velocity = new Vector2();
-                let wire_center = world.constrain.position;
-                let wire_radius = world.constrain.radius;
+                let wire_center = world.pendulum.constrain.center;
+                let wire_radius = world.pendulum.constrain.radius;
                 for (let i = 0; i < 5; i++) {
-                    position.x = wire_center.x + wire_radius * Math.cos(angle);
-                    position.y = wire_center.y + wire_radius * Math.sin(angle);
-                    mass = Math.PI * radius * radius;
-                    world.pbd_beads.push(new PBD_Bead(position, radius, mass, world.constrain, velocity, 1.0));
+                    radius = 0.05 + Math.random() * 0.1;
+                    body_circle.set_radius(radius);
+                    body_circle.center.x = wire_center.x + wire_radius * Math.cos(angle);
+                    body_circle.center.y = wire_center.y + wire_radius * Math.sin(angle);
+
+                    let disk = Disk.from(body_circle, 0.1, velocity, 1.0);
+                    world.subjects.push(disk);
+                    world.clear.subjects.push(disk);
+                    world.gravity.subjects.push(disk);
+                    world.pendulum.subjects.push(disk);
+                    world.collision.subjects.push(disk);
 
                     angle += Math.PI / 5;
-                    radius = 0.05 + Math.random() * 0.1;
                 }
+
+                document.getElementById("button-run").innerHTML = "Run";
+                document.getElementById("pendulum-mode").innerHTML = "Position Based Dynamic";
             }
 
             function pause_or_resume()
@@ -153,16 +129,32 @@
                 button.innerHTML = (world.paused ? "Resume" : "Pause");
             }
 
-            function update()
+            function change_mode()
+            {
+                switch (world.pendulum.mode) {
+                    case Pendulum_Simulation_Mode.position_based_dynamic: {
+                        world.pendulum.update_mode(Pendulum_Simulation_Mode.analytic);
+                        document.getElementById("pendulum-mode").innerHTML = "Analytic";
+                        return;
+                    }
+                    case Pendulum_Simulation_Mode.analytic: {
+                        world.pendulum.update_mode(Pendulum_Simulation_Mode.position_based_dynamic);
+                        document.getElementById("pendulum-mode").innerHTML = "Position Based Dynamic";
+                        return;
+                    }
+                }
+            }
+
+            function mainloop()
             {
                 world.update();
                 world.render();
 
-                requestAnimationFrame(update);
+                requestAnimationFrame(mainloop);
             }
 
             restart();
-            update();
+            mainloop();
         </script>
     </body>
 </html>

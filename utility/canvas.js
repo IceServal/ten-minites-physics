@@ -1,19 +1,41 @@
 class Plotting_Scale
 {
-    constructor(world_size, canvas_size, scale, is_ccw_positive)
+    constructor()
     {
-        this.world_size = world_size;
-        this.canvas_size = canvas_size;
-        this.is_ccw_positive = is_ccw_positive;
+        this.world_size = new Vector2(1.0, 1.0);
+        this.canvas_size = new Vector2(1.0, 1.0);
+        this.scale = 1.0;
+    }
 
-        this.scale = scale;
+    static from(world_size, canvas_size, scale)
+    {
         if (
             false
-            || Math.abs(this.scale - canvas_size.x / world_size.x) > 1e-4
-            || Math.abs(this.scale - canvas_size.y / world_size.y) > 1e-4
+            || Math.abs(scale - canvas_size.x / world_size.x) > 1e-4
+            || Math.abs(scale - canvas_size.y / world_size.y) > 1e-4
         ) {
             console.log("WARNING: Plotting scale is inconsistent with width or height ratio between canvas and world!");
         }
+
+        let result = new Plotting_Scale();
+        result.world_size.copy(world_size);
+        result.canvas_size.copy(canvas_size);
+        result.scale = scale;
+        return result;
+    }
+
+    clone()
+    {
+        let result = new Plotting_Scale().copy(this);
+        return result;
+    }
+
+    copy(a)
+    {
+        this.world_size.copy(a.world_size);
+        this.canvas_size.copy(a.canvas_size);
+        this.scale = a.scale;
+        return this;
     }
 
     world_to_canvas(position)
@@ -33,14 +55,24 @@ class Plotting_Scale
 
 class Canvas
 {
-    constructor(canvas, size, plotting_scale)
+    constructor()
     {
-        this.canvas = canvas;
-        this.context = canvas.getContext("2d");
-        this.plotting_scale = plotting_scale
+        this.canvas = null;
+        this.context = null;
+        this.plotting_scale = new Plotting_Scale();
+    }
 
-        canvas.width = size.x;
-        canvas.height = size.y;
+    static from(canvas_name, plotting_scale)
+    {
+        let canvas = document.getElementById(canvas_name);
+        canvas.width = plotting_scale.canvas_size.x;
+        canvas.height = plotting_scale.canvas_size.y;
+
+        let result = new Canvas();
+        result.canvas = canvas;
+        result.context = canvas.getContext("2d");
+        result.plotting_scale = plotting_scale;
+        return result;
     }
 
     clear()
@@ -48,10 +80,10 @@ class Canvas
         this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
-    render_line(point0, point1, width, color = "#000000")
+    render_line(line, width, color = "#000000")
     {
-        let p0 = this.plotting_scale.world_to_canvas(point0);
-        let p1 = this.plotting_scale.world_to_canvas(point1);
+        let p0 = this.plotting_scale.world_to_canvas(line.point0);
+        let p1 = this.plotting_scale.world_to_canvas(line.point1);
         let old_width = this.context.lineWidth;
         let new_width = this.plotting_scale.scale * width;
 
@@ -100,19 +132,19 @@ class Canvas
         }
     }
 
-    render_circle(center, radius, color = "#FFFFFF")
+    render_circle(circle, color = "#FFFFFF")
     {
-        let c = this.plotting_scale.world_to_canvas(center);
-        let r = this.plotting_scale.scale * radius;
+        let c = this.plotting_scale.world_to_canvas(circle.center);
+        let r = this.plotting_scale.scale * circle.radius;
 
         this.context.fillStyle = color;
         this._render_circle(c, r, false);
     }
 
-    render_wireframe_circle(center, radius, width, color = "#000000")
+    render_wireframe_circle(circle, width, color = "#000000")
     {
-        let c = this.plotting_scale.world_to_canvas(center);
-        let r = this.plotting_scale.scale * radius;
+        let c = this.plotting_scale.world_to_canvas(circle.center);
+        let r = this.plotting_scale.scale * circle.radius;
         let w = this.plotting_scale.scale * width;
 
         this.context.strokeStyle = color;
@@ -120,19 +152,22 @@ class Canvas
         this._render_circle(c, r, true);
     }
 
-    render_capsule(position, angle, radius, length, color = "#FFFFFF")
+    render_rod(rod, color = "#FFFFFF")
     {
-        let p = this.plotting_scale.world_to_canvas(position);
-        let a = (this.plotting_scale.is_ccw_positive ? angle : -angle);
+        let line = rod.line;
+        let radius = rod.radius;
+
+        let p = this.plotting_scale.world_to_canvas(line.point0);
+        let a = line.angle;
+        let l = this.plotting_scale.scale * line.length;
         let r = this.plotting_scale.scale * radius;
-        let l = this.plotting_scale.scale * length;
 
         this.context.fillStyle = color;
         this.context.translate(p.x, p.y);
-        this.context.rotate(a);
+        this.context.rotate(-a);
         this.context.fillRect(0.0, -r, l, 2.0 * r);
-        this._render_circle(new Vector2(0.0, 0.0), r);
-        this._render_circle(new Vector2(l,   0.0), r);
+        this._render_circle(Vector2.from_components(0.0, 0.0), r);
+        this._render_circle(Vector2.from_components(l,   0.0), r);
         this.context.resetTransform();
     }
 };

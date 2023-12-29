@@ -31,7 +31,8 @@
     </head>
 
     <body>
-        <button type = "button" class = "button" onclick = "restart()">Restart</button>
+        <button class = "button" type = "button" id = "button-restart" onclick = "restart()">Restart</button>
+        <button class = "button" type = "button" id = "button-run" onclick = "pause_or_resume()">Run</button>
         <label for = "restitution">Restitution</label>
         <input type = "range" name = "restitution" id = "restitution" min = "0" max = "10" value = "10" class = "slider">
 
@@ -39,132 +40,131 @@
 
         <canvas id = "canvas"></canvas>
         <script src = "../utility/math/vector.js"></script>
-        <script src = "../utility/shape/ball.js"></script>
-        <script src = "../utility/physics/collision.js"></script>
+        <script src = "../utility/math/line.js"></script>
+        <script src = "../utility/canvas.js"></script>
+        <script src = "../utility/math/shape/circle.js"></script>
+        <script src = "../utility/math/shape/rod.js"></script>
+        <script src = "../utility/physics/component/mass.js"></script>
+        <script src = "../utility/physics/rigid-body/disk.js"></script>
+        <script src = "../utility/physics/rigid-body/capsule.js"></script>
+        <script src = "../utility/physics/field/clear-acceleration.js"></script>
+        <script src = "../utility/physics/field/proportional-acceleration.js"></script>
+        <script src = "../utility/physics/constrain/free-movement.js"></script>
+        <script src = "../utility/physics/constrain/static-collision.js"></script>
+        <script src = "../utility/physics/constrain/dynamic-collision.js"></script>
         <script>
-            let canvas = document.getElementById("canvas");
-            let context = canvas.getContext("2d");
+            let min_simulation_size = 2.0;
+            let canvas_size = Vector2.from_components(window.innerWidth - 20, window.innerHeight - 100);
+            let canvas_to_world_scale = min_simulation_size / Math.min(canvas_size.x, canvas_size.y);
+            let world_size = canvas_size.clone().scale(canvas_to_world_scale);
 
-            canvas.width = window.innerWidth - 20;
-            canvas.height = window.innerHeight - 100;
-
-            let simulation_size = 2.0;
-            let simulation_scale = Math.min(canvas.width, canvas.height) / simulation_size;
-            let simulation_width = canvas.width / simulation_scale;
-            let simulation_height = canvas.height / simulation_scale;
+            let plotting_scale = Plotting_Scale.from(world_size, canvas_size, 1.0 / canvas_to_world_scale);
+            let canvas = Canvas.from("canvas", plotting_scale);
 
             let world = {
-                gravity: new Vector2(0.0, -1.0),
-                planck_time: 1.0 / 60.0,
-                size: new Vector2(simulation_width, simulation_height),
                 paused: true,
-                balls: [],
-            };
 
-            function from_world_to_canvas(a)
-            {
-                return new Vector2(simulation_scale * a.x, canvas.height - simulation_scale * a.y);
-            }
+                planck_time: 1.0 / 60.0,
+                num_of_subjects: 20,
+                subjects: [],
+
+                clear: null,
+                gravity: null,
+                free_movement: null,
+                static_collision: null,
+                dynamic_collision: null,
+
+                update: function () {
+                    if (world.paused) return;
+
+                    this.clear.apply();
+                    this.gravity.apply();
+                    this.free_movement.apply(world.planck_time);
+                    this.static_collision.apply();
+                    this.dynamic_collision.apply();
+                },
+
+                render: function () {
+                    canvas.clear();
+                    for (let i = 0; i < world.subjects.length; i++) {
+                        canvas.render_circle(world.subjects[i].body, "#44AA99");
+                    }
+                    let sc = world.static_collision;
+                    for (let i = 0; i < sc.static_disks.length; i++) {
+                        canvas.render_circle(sc.static_disks[i].body, "#FF0000");
+                    }
+                    for (let i = 0; i < sc.static_capsules.length; i++) {
+                        let rod = sc.static_capsules[i].body;
+                        canvas.render_line(rod.line, rod.radius * 2.0, "#000000");
+                    }
+                },
+            };
 
             function restart()
             {
-                world.balls = [];
+                world.pause = true;
+                world.subjects = [];
 
-                for (let i = 0; i < 20; i++) {
+                world.clear = new Clear_Acceleration_Field();
+                world.gravity = Proportional_Acceleration_Field.from(Vector2.from_components(0.0, -1.0));
+                world.free_movement = new Free_Movement();
+                world.static_collision = new Static_Collision();
+                world.dynamic_collision = new Dynamic_Collision();
+
+                let density = 1.0;
+                let restitution = 1.0;
+                for (let i = 0; i < world.num_of_subjects; i++) {
+                    let center = Vector2.from_components(Math.random() * world_size.x, Math.random() * world_size.y);
                     let radius = 0.05 + Math.random() * 0.1;
-                    let mass = Math.PI * radius * radius;
-                    let position = new Vector2(Math.random() * simulation_width, Math.random() * simulation_height);
-                    let velocity = new Vector2(-1.0 + 2.0 * Math.random(), -1.0 + 2.0 * Math.random());
-                    let restitution = 1.0;
+                    let body_circle = Circle.from(center, radius);
+                    let velocity = Vector2.from_components(-1.0 + 2.0 * Math.random(), -1.0 + 2.0 * Math.random());
 
-                    world.balls.push(new Ball(radius, mass, position, velocity, restitution));
+                    let disk = Disk.from(body_circle, density, velocity, restitution);
+                    world.subjects.push(disk);
+                    world.clear.subjects.push(disk);
+                    world.gravity.subjects.push(disk);
+                    world.free_movement.subjects.push(disk);
+                    world.static_collision.subjects.push(disk);
+                    world.dynamic_collision.subjects.push(disk);
+                }
+
+                let velocity = new Vector2();
+                let sc = world.static_collision;
+                let body_circle = Circle.from(Vector2.from_components(world_size.x, 0.0).scale(0.5), 0.2);
+                sc.static_disks.push(Disk.from(body_circle, 0.0, velocity, 1.0));
+
+                let points = [];
+                points.push(Vector2.from_components(0.0,          0.0));
+                points.push(Vector2.from_components(world_size.x, 0.0));
+                points.push(Vector2.from_components(world_size.x, world_size.y));
+                points.push(Vector2.from_components(0.0,          world_size.y));
+                points.push(Vector2.from_components(0.0,          0.0));
+                for (let i = 0; i < points.length - 1; i++) {
+                    let line = Line.from_point0_point1(points[i], points[i + 1]);
+                    sc.static_capsules.push(Capsule.from(Rod.from(line, 0.01), 0.0, velocity, 1.0));
                 }
             }
 
-            function draw_ball(ball)
+            function pause_or_resume()
             {
-                context.beginPath();
+                world.paused = !world.paused;
 
-                let position_in_canvas = from_world_to_canvas(ball.position);
-                context.arc(
-                    position_in_canvas.x,
-                    position_in_canvas.y,
-                    simulation_scale * ball.radius,
-                    0.0,
-                    2.0 * Math.PI,
-                )
-
-                context.closePath();
-                context.fill();
+                let button = document.getElementById("button-run");
+                button.innerHTML = (world.paused ? "Resume" : "Pause");
             }
 
-            function draw_scene()
+            function mainloop()
             {
-                context.clearRect(0, 0, canvas.width, canvas.height);
-                context.fillStyle = "#FF0000";
+                world.update();
+                world.render();
 
-                for (let i = 0; i < world.balls.length; i++) {
-                    draw_ball(world.balls[i]);
-                }
-            }
-
-            function collide_with_wall(a)
-            {
-                if (a.position.x < a.radius) {
-                    a.position.x = a.radius;
-                    a.velocity.x = -a.velocity.x;
-                }
-                if (a.position.x > world.size.x - a.radius) {
-                    a.position.x = world.size.x - a.radius;
-                    a.velocity.x = -a.velocity.x;
-                }
-                if (a.position.y < a.radius) {
-                    a.position.y = a.radius;
-                    a.velocity.y = -a.velocity.y;
-                }
-                if (a.position.y > world.size.y - a.radius) {
-                    a.position.y = world.size.y - a.radius;
-                    a.velocity.y = -a.velocity.y;
-                }
-            }
-
-            function drop(a)
-            {
-                a.velocity.add(world.gravity, world.planck_time);
-                a.position.add(a.velocity, world.planck_time);
-            }
-
-            function simulate()
-            {
-                let balls = world.balls;
-                let num_balls = balls.length;
-                for (let i = 0; i < num_balls; i++) {
-                    drop(balls[i]);
-                }
-                for (let i = 0; i < num_balls; i++) {
-                    for (let j = i + 1; j < num_balls; j++) {
-                        ball_ball_collide(balls[i], balls[j]);
-                    }
-                }
-                for (let i = 0; i < num_balls; i++) {
-                    collide_with_wall(balls[i]);
-                }
-            }
-
-            function update()
-            {
-                simulate();
-                draw_scene();
-
-                requestAnimationFrame(update);
+                requestAnimationFrame(mainloop);
             }
 
             restart();
-            update();
+            mainloop();
 
-            document.getElementById("restitution").oninput = function() {
-                for (let i = 0; i < world.balls.length; i++) world.balls[i].restitution = this.value / 10.0;
-            }
+            document.getElementById("restitution").oninput = function() { for (let i = 0; i < world.subjects.length; i++) world.subjects[i].restitution = this.value / 10.0; }
         </script>
     </body>
 </html>
