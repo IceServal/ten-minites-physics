@@ -29,5 +29,7 @@ class Free_Movement
             this.act_on(subjects[i], delta_time);
         }
     }
+
+    render(canvas) {}
 };
 

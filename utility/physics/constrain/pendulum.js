@@ -52,6 +52,11 @@ class Pendulum
         }
     }
 
+    render(canvas)
+    {
+        canvas.render_wireframe_circle(this.constrain, 0.01, "#000000");
+    }
+
     _position_based_dynamic_simulate(kinematic_body, delta_time)
     {
         let last_position = kinematic_body.position.clone();

@@ -46,5 +46,10 @@ class Disk
     {
         this.mass.set_density(density);
     }
+
+    render(canvas)
+    {
+        canvas.render_circle(this.body, "#00FFFF");
+    }
 };
 

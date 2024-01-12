@@ -35,5 +35,7 @@ class Clear_Acceleration_Field
             this.act_on(this.subjects[i]);
         }
     }
+
+    render(canvas) {}
 };
 

@@ -40,6 +40,8 @@ class Static_Collision
         }
     }
 
+    render(canvas) {}
+
     _collide_with_static_disks(kinematic_body)
     {
         // TODO: Handle the cases that collision position located on the back half part of disk.

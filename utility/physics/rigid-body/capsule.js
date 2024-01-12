@@ -45,5 +45,10 @@ class Capsule
     {
         this.mass.set_density(density);
     }
+
+    render(canvas)
+    {
+        canvas.render_rod(this.body, "#FF4477");
+    }
 };
 

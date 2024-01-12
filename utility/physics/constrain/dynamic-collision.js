@@ -52,5 +52,7 @@ class Dynamic_Collision
             }
         }
     }
+
+    render(canvas) {}
 }
 
