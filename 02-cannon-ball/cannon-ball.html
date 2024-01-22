@@ -1,0 +1,235 @@
+<!--
+Copyright 2022 Matthias Müller - Ten Minute Physics, https://www.youtube.com/channel/UCTG_vrRdKYfrpqCv_WV4eyA
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+
+<!DOCTYPE html>
+<html lang = "en">
+    <meta charset = "UTF-8" name = "viewport" content = "width = device-width, initial-scale = 1.0">
+
+    <head>
+        <title>Cannon Ball 3D</title>
+        <style>
+            body {
+                font-family: "Cascadia Code";
+                font-size: 15px;
+            };
+            .button {
+                background-color: #606060;
+                border: none;
+                color: white;
+                padding: 10px 32px;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+            };
+        </style>
+    </head>
+
+    <body>
+        <h1>Cannon Ball 3D</h1>
+        <button class = "button" type = "button" id = "button-run" onclick = "run()">Run</button>
+        <button class = "button" type = "button" id = "button-restart" onclick = "restart()">Restart</button>
+
+        <br>
+        <br>
+        <div id = "container"></div>
+
+        <script src = "https://unpkg.com/three@0.139.2/build/three.min.js"></script>
+        <script src = "https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
+        <script>
+            let scene;
+            let renderer;
+            let camera;
+            let camera_control;
+
+            let world = {
+                gravity: new THREE.Vector3(0.0, -10.0, 0.0),
+                timeslice: 1.0 / 60.0,
+                size: {x: 4, z: 4},
+                paused: true,
+                objects: [],
+            };
+
+            class Ball
+            {
+                constructor(position, radius, velocity, scene)
+                {
+                    this.position = position;
+                    this.radius = radius;
+                    this.velocity = velocity;
+
+                    let geometry = new THREE.SphereGeometry(radius, 32, 32);
+                    let material = new THREE.MeshPhongMaterial({color: 0xFF0000});
+                    this.mesh = new THREE.Mesh(geometry, material);
+                    this.mesh.position.copy(position);
+
+                    scene.add(this.mesh);
+                }
+
+                simulate()
+                {
+                    this.velocity.addScaledVector(world.gravity, world.timeslice);
+                    this.position.addScaledVector(this.velocity, world.timeslice);
+
+                    if (false) {}
+                    else if (this.position.x < -world.size.x) {
+                        this.position.x = -world.size.x;
+                        this.velocity.x = -this.velocity.x;
+                    }
+                    else if (this.position.x > world.size.x) {
+                        this.position.x = world.size.x;
+                        this.velocity.x = -this.velocity.x;
+                    }
+                    else if (this.position.z < -world.size.z) {
+                        this.position.z = -world.size.z;
+                        this.velocity.z = -this.velocity.z;
+                    }
+                    else if (this.position.z > world.size.z) {
+                        this.position.z = world.size.z;
+                        this.velocity.z = -this.velocity.z;
+                    }
+                    else if (this.position.y < this.radius) {
+                        this.position.y = this.radius;
+                        this.velocity.y = -this.velocity.y;
+                    }
+                    else {
+                        // Nothing special here.
+                    }
+
+                    this.mesh.position.copy(this.position);
+                }
+            };
+
+            function init_scene()
+            {
+                scene = new THREE.Scene();
+
+                scene.add(new THREE.AmbientLight(0x505050));
+                scene.fog = new THREE.Fog(0x000000, 0, 15);
+
+                let spot_light = new THREE.SpotLight(0xFFFFFF);
+                spot_light.angle = Math.PI / 5;
+                spot_light.penumbra = 0.2;
+                spot_light.castShadow = true;
+                spot_light.shadow.camera.near = 3;
+                spot_light.shadow.camera.fat = 10;
+                spot_light.shadow.mapSize.width = 1024;
+                spot_light.shadow.mapSize.height = 1024;
+                scene.add(spot_light);
+
+                let directional_light = new THREE.DirectionalLight(0x55505a, 1);
+                directional_light.position.set(0, 3, 0);
+                directional_light.castShadow = true;
+                directional_light.shadow.camera.near = 1;
+                directional_light.shadow.camera.far = 10;
+                directional_light.shadow.camera.right = 1;
+                directional_light.shadow.camera.left = -1;
+                directional_light.shadow.camera.top = 1;
+                directional_light.shadow.camera.bottom = -1;
+                directional_light.shadow.mapSize.width = 1024;
+                directional_light.shadow.mapSize.height = 1024;
+                scene.add(directional_light);
+
+                let ground = new THREE.Mesh(
+                    new THREE.PlaneBufferGeometry(20, 20, 1, 1),
+                    new THREE.MeshPhongMaterial({color: 0xa0adaf, shininess: 150}),
+                );
+                ground.rotation.x = -Math.PI / 2;
+                ground.receiveShadow = true;
+                scene.add(ground);
+
+                let helper = new THREE.GridHelper(20, 20);
+                helper.material.opacity = 1.0;
+                helper.material.transparent = true;
+                helper.position.set(0, 0.002, 0);
+                scene.add(helper);
+
+                renderer = new THREE.WebGLRenderer();
+                renderer.shadowMap.enabled = true;
+                renderer.setPixelRatio(window.devicePixelRatio);
+                renderer.setSize(window.innerWidth, window.innerHeight);
+
+                window.addEventListener("resize", on_window_resize, false);
+                container.appendChild(renderer.domElement);
+
+                camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
+                camera.position.set(0, 1, 4);
+                camera.updateMatrixWorld();
+                scene.add(camera);
+
+                camera_control = new THREE.OrbitControls(camera, renderer.domElement);
+                camera_control.zoomSpeed = 2.0;
+                camera_control.panSpeed = 0.4;
+            }
+
+            function init_world(scene)
+            {
+                let radius = 0.2;
+                let position = new THREE.Vector3(radius, radius, radius);
+                let velocity = new THREE.Vector3(2.0, 5.0, 3.0);
+
+                world.objects.push(new Ball(position, radius, velocity, scene));
+            }
+
+            function simulate()
+            {
+                if (world.paused) return;
+                for (let object of world.objects) {
+                    object.simulate();
+                }
+            }
+
+            function on_window_resize()
+            {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            function run()
+            {
+                let button = document.getElementById("button-run");
+                if (world.paused) {
+                    button.innerHTML = "Stop";
+                } else {
+                    button.innerHTML = "Run";
+                }
+
+                world.paused = !world.paused;
+            }
+
+            function restart()
+            {
+                for (let object of world.objects) {
+                    object.position.x = 0.2;
+                    object.position.y = 0.2;
+                    object.position.z = 0.2;
+                    object.velocity.x = 2.0;
+                    object.velocity.y = 5.0;
+                    object.velocity.z = 3.0;
+                }
+            }
+
+            function update()
+            {
+                simulate();
+                renderer.render(scene, camera);
+                camera_control.update();
+
+                requestAnimationFrame(update);
+            }
+
+            init_scene();
+            init_world(scene);
+            update();
+        </script>
+    </body>
+</html>
+
+
