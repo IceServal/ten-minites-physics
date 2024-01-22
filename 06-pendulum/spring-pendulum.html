@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+    <meta charset = "UTF-8" name = "viewport" content = "width = device-width, initial-scale = 1.0">
+
+    <head>
+        <title>Constrained Dynamics</title>
+        <style>
+            body {
+                font-family: "Cascadia Code";
+                font-size: 15px;
+            };
+            .button {
+                background-color: #606060;
+                border: none;
+                color: white;
+                padding: 10px 32px;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+            };
+        </style>
+    </head>
+
+    <body>
+        <button class = "button" type = "button" id = "button-restart" onclick = "restart()">Restart</button>
+        <button class = "button" type = "button" id = "button-run" onclick = "pause_or_resume()">Run</button>
+        <button class = "button" type = "button" id = "button-step" onclick = "world.step()">Step</button>
+
+        <br>
+        <canvas id = "canvas"></canvas>
+        <script src = "../utility/math/vector.js"></script>
+        <script src = "../utility/math/line.js"></script>
+        <script src = "../utility/canvas.js"></script>
+        <script src = "../utility/math/shape/circle.js"></script>
+        <script src = "../utility/physics/component/mass.js"></script>
+        <script src = "../utility/physics/rigid-body/disk.js"></script>
+        <script src = "../utility/physics/field/clear-acceleration.js"></script>
+        <script src = "../utility/physics/field/proportional-acceleration.js"></script>
+        <script src = "../utility/physics/field/spring.js"></script>
+        <script src = "../utility/physics/constrain/free-movement.js"></script>
+        <script src = "../utility/world.js"></script>
+        <script>
+            let min_simulation_size = 1.0;
+            let canvas_size = Vector2.from_components(window.innerWidth - 20, window.innerHeight - 20)
+            let canvas_to_world_scale = min_simulation_size / Math.min(canvas_size.x, canvas_size.y);
+            let world_size = canvas_size.clone().scale(canvas_to_world_scale);
+
+            let plotting_scale = Plotting_Scale.from(world_size, canvas_size, 1.0 / canvas_to_world_scale);
+            let canvas = Canvas.from("canvas", plotting_scale);
+            let world = World.from(world_size, 100, 0.01);
+
+            function restart()
+            {
+                world = World.from(world_size, 100, 0.01);
+                document.getElementById("button-run").innerHTML = "Run";
+
+                let clear = new Clear_Acceleration_Field();
+                let gravity = Proportional_Acceleration_Field.from(Vector2.from_components(0.0, -10.0));
+                let system = new Spring_System();
+                let move = new Free_Movement();
+
+                let lengths = [0.2, 0.1, 0.05];
+                let circles = [];
+                let circle = Circle.from(world.size.clone().scale(0.5), 0.0); circles.push(circle.clone());
+                circle.set_radius(0.050).center.x += lengths[0]; circles.push(circle.clone());
+                circle.set_radius(0.025).center.y += lengths[1]; circles.push(circle.clone());
+                circle.set_radius(0.015).center.y += lengths[2]; circles.push(circle.clone());
+
+                let density = 1.0;
+                let velocity = new Vector2();
+                let restitution = 1.0;
+                for (let i = 0; i < circles.length; i++) {
+                    let disk = Disk.from(circles[i], density, velocity, restitution);
+                    world.subjects.push(disk);
+                    if (i > 0) {
+                        clear.subjects.push(disk);
+                        gravity.subjects.push(disk);
+                        move.subjects.push(disk);
+                    }
+                }
+
+                let elasticity = 1.0;
+                for (let i = 1; i < world.subjects.length; i++) {
+                    let spring = Spring.from(lengths[i - 1], elasticity);
+                    spring.constrain0 = world.subjects[i - 1];
+                    spring.constrain1 = world.subjects[i];
+                    system.springs.push(spring);
+                }
+
+                world.fields.push(clear);
+                world.fields.push(gravity);
+                world.fields.push(system);
+                world.constrains.push(move);
+            }
+
+            function pause_or_resume()
+            {
+                world.pause_or_resume();
+                document.getElementById("button-run").innerHTML = (world.paused ? "Resume" : "Pause");
+            }
+
+            function mainloop()
+            {
+                world.update();
+                world.render(canvas);
+
+                requestAnimationFrame(mainloop);
+            }
+
+            restart();
+            mainloop();
+        </script>
+    </body>
+</html>
+
