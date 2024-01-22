@@ -1,0 +1,377 @@
+<!--
+Copyright 2022 Matthias Müller - Ten Minute Physics, https://www.youtube.com/channel/UCTG_vrRdKYfrpqCv_WV4eyA
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+
+<!DOCTYPE html>
+<html lang = "en">
+    <meta charset = "UTF-8" name = "viewport" content = "width = device-width, initial-scale = 1.0">
+
+    <head>
+        <title>User Interaction</title>
+        <style>
+            body {
+                font-family: "Cascadia Code";
+                font-size: 15px;
+            };
+            .button {
+                background-color: #606060;
+                border: none;
+                color: white;
+                padding: 10px 32px;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+            };
+        </style>
+    </head>
+
+    <body>
+        <h1>User Interaction</h1>
+        <button class = "button" type = "button" id = "button-run" onclick = "pause_or_resume()">Run</button>
+        <button class = "button" type = "button" id = "button-restart" onclick = "restart()">Restart</button>
+
+        <br>
+        <br>
+        <div id = "container"></div>
+
+        <script src = "https://unpkg.com/three@0.139.2/build/three.min.js"></script>
+        <script src = "https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
+        <script>
+            let initialized = false;
+
+            let scene;
+            let renderer;
+            let camera;
+            let controller;
+            let grabber;
+
+            let world = {
+                paused: true,
+
+                size: {x: 1.5, z: 2.5},
+                time: 0.0,
+                timeslice: 1.0 / 60.0,
+                subjects: [],
+
+                gravity: new THREE.Vector3(0.0, -10.0, 0.0),
+
+                update: function () {
+                    if (world.paused) return;
+
+                    world.time += world.timeslice;
+                    for (let i = 0; i < world.subjects.length; i++) {
+                        world.subjects[i].act(world.timeslice, world.size);
+                    }
+                },
+
+                render: function () {
+                    renderer.render(scene, camera);
+                },
+            };
+
+            class Ball
+            {
+                constructor(position, radius, velocity, color = 0xff0000)
+                {
+                    this.position = position;
+                    this.radius = radius;
+                    this.velocity = velocity;
+                    this.grabbed = false;
+
+                    let geometry = new THREE.SphereGeometry(radius, 32, 32);
+                    let material = new THREE.MeshPhongMaterial({color: color});
+                    this.mesh = new THREE.Mesh(geometry, material);
+                    this.mesh.position.copy(position);
+                    this.mesh.userData = this;
+                    this.mesh.layers.enable(1);
+                }
+
+                act(delta_time, bounding_size)
+                {
+                    if (this.grabbed) return;
+
+                    this.velocity.addScaledVector(world.gravity, delta_time);
+                    this.position.addScaledVector(this.velocity, delta_time);
+
+                    if (false) {}
+                    else if (this.position.x < -bounding_size.x) {
+                        this.position.x = -bounding_size.x;
+                        this.velocity.x = -this.velocity.x;
+                    }
+                    else if (this.position.x > bounding_size.x) {
+                        this.position.x = bounding_size.x;
+                        this.velocity.x = -this.velocity.x;
+                    }
+                    else if (this.position.z < -bounding_size.z) {
+                        this.position.z = -bounding_size.z;
+                        this.velocity.z = -this.velocity.z;
+                    }
+                    else if (this.position.z > bounding_size.z) {
+                        this.position.z = bounding_size.z;
+                        this.velocity.z = -this.velocity.z;
+                    }
+                    else if (this.position.y < this.radius) {
+                        this.position.y = this.radius;
+                        this.velocity.y = -this.velocity.y;
+                    }
+                    else {
+                        // Nothing special here.
+                    }
+
+                    this.mesh.position.copy(this.position);
+                    this.mesh.geometry.computeBoundingSphere();
+                }
+
+                start_grabbing(position, velocity)
+                {
+                    this.grabbed = true;
+                    this.position.copy(position);
+                    this.mesh.position.copy(position);
+                }
+
+                grabbing(position, velocity)
+                {
+                    this.position.copy(position);
+                    this.mesh.position.copy(position);
+                }
+
+                finish_grabbing(position, velocity)
+                {
+                    this.grabbed = false;
+                    this.velocity.copy(velocity);
+                }
+            };
+
+            class Grabber
+            {
+                constructor()
+                {
+                    this.raycaster = new THREE.Raycaster();
+                    this.raycaster.layers.set(1);
+                    this.raycaster.params.Line.threshold = 0.1;
+                    this.subject = null;
+                    this.distance = 0.0;
+                    this.last_time = 0.0;
+                    this.last_position = new THREE.Vector3();
+                    this.last_velocity = new THREE.Vector3();
+                }
+
+                update_raycaster(x, y)
+                {
+                    let rectangle = renderer.domElement.getBoundingClientRect();
+                    this.mouse_position = new THREE.Vector2();
+                    this.mouse_position.x = +((x - rectangle.left) / rectangle.width) * 2.0 - 1.0;
+                    this.mouse_position.y = -((y - rectangle.top) / rectangle.height) * 2.0 + 1.0;
+                    this.raycaster.setFromCamera(this.mouse_position, camera);
+                }
+
+                start_grabbing(x, y)
+                {
+                    if (world.paused) return;
+
+                    this.subject = null;
+                    this.update_raycaster(x, y);
+                    let intersects = this.raycaster.intersectObjects(scene.children);
+                    if (intersects.length > 0) {
+                        let object = intersects[0].object.userData;
+                        if (object) {
+                            this.subject = object;
+                            this.distance = intersects[0].distance;
+                            let position = this.raycaster.ray.origin.clone();
+                            position.addScaledVector(this.raycaster.ray.direction, this.distance);
+                            this.last_position.copy(position);
+                            this.last_velocity.set(0.0, 0.0, 0.0);
+                            this.subject.start_grabbing(this.last_position, this.last_velocity);
+                            this.time = world.time;
+                        }
+                    }
+                }
+
+                grabbing(x, y)
+                {
+                    if (this.subject) {
+                        this.update_raycaster(x, y);
+                        let position = this.raycaster.ray.origin.clone();
+                        position.addScaledVector(this.raycaster.ray.direction, this.distance);
+
+                        if (this.time < world.time) {
+                            let velocity = new THREE.Vector3();
+                            velocity.copy(position);
+                            velocity.sub(this.last_position);
+                            velocity.divideScalar(world.time - this.time);
+
+                            this.last_position.copy(position);
+                            this.last_velocity.multiplyScalar(0.2);
+                            this.last_velocity.addScaledVector(velocity, 0.8);
+                            this.time = world.time;
+                            this.subject.grabbing(this.last_position, this.last_velocity);
+                        }
+                    }
+                }
+
+                finish_grabbing(x, y)
+                {
+                    if (this.subject) {
+                        this.subject.finish_grabbing(this.last_position, this.last_velocity);
+                        this.subject = null;
+                    }
+                }
+            };
+
+            function restart()
+            {
+                world.paused = true;
+                document.getElementById("button-run").innerHTML = "Run";
+
+                scene = new THREE.Scene();
+
+                {
+                    world.subjects = [];
+
+                    let radius = 0.2;
+                    let position = new THREE.Vector3(radius, 1.0, radius);
+                    let velocity = new THREE.Vector3();
+                    let ball = new Ball(position, radius, velocity);
+                    world.subjects.push(ball);
+                    scene.add(ball.mesh);
+                }
+
+                {
+                    let spot_light = new THREE.SpotLight(0xFFFFFF);
+                    spot_light.angle = Math.PI / 5.0;
+                    spot_light.penumbra = 0.2;
+                    spot_light.position.set(2.0, 3.0, 3.0);
+                    spot_light.castShadow = true;
+                    spot_light.shadow.camera.near = 3.0;
+                    spot_light.shadow.camera.fat = 10.0;
+                    spot_light.shadow.mapSize.width = 1024;
+                    spot_light.shadow.mapSize.height = 1024;
+                    scene.add(spot_light);
+                }
+
+                {
+                    let directional_light = new THREE.DirectionalLight(0x55505A, 1.0);
+                    directional_light.position.set(0.0, 3.0, 0.0);
+                    directional_light.castShadow = true;
+                    directional_light.shadow.camera.near = 1.0;
+                    directional_light.shadow.camera.far = 10.0;
+                    directional_light.shadow.camera.right = 1.0;
+                    directional_light.shadow.camera.left = -1.0;
+                    directional_light.shadow.camera.top = 1.0;
+                    directional_light.shadow.camera.bottom = -1.0;
+                    directional_light.shadow.mapSize.width = 1024;
+                    directional_light.shadow.mapSize.height = 1024;
+                    scene.add(directional_light);
+                }
+
+                {
+                    let ground = new THREE.Mesh(
+                        new THREE.PlaneBufferGeometry(20.0, 20.0, 1.0, 1.0),
+                        new THREE.MeshPhongMaterial({color: 0xA0ADAF, shininess: 150.0}),
+                    );
+                    ground.rotation.x = -Math.PI / 2.0;
+                    ground.receiveShadow = true;
+                    scene.add(ground);
+                }
+
+                {
+                    let helper = new THREE.GridHelper(20.0, 20.0);
+                    helper.material.opacity = 1.0;
+                    helper.material.transparent = true;
+                    helper.position.set(0.0, 0.002, 0.0);
+                    scene.add(helper);
+                }
+
+                {
+                    camera = new THREE.PerspectiveCamera(70.0, window.innerWidth / window.innerHeight, 0.01, 100.0);
+                    camera.position.set(0.0, 1.0, 4.0);
+                    camera.updateMatrixWorld();
+                    camera.aspect = window.innerWidth / window.innerHeight;
+                    camera.updateProjectionMatrix();
+                    scene.add(camera);
+                }
+
+                if (!initialized) {
+                    initialized = true;
+
+                    renderer = new THREE.WebGLRenderer();
+                    renderer.shadowMap.enabled = true;
+                    renderer.setPixelRatio(window.devicePixelRatio);
+                    renderer.setSize(0.8 * window.innerWidth, 0.8 * window.innerHeight);
+                    container.appendChild(renderer.domElement);
+                }
+
+                renderer.setSize(window.innerWidth, window.innerHeight);
+
+                controller = new THREE.OrbitControls(camera, renderer.domElement);
+                controller.zoomSpeed = 2.0;
+                controller.panSpeed = 0.4;
+
+                grabber = new Grabber();
+            }
+
+            function pause_or_resume()
+            {
+                world.paused = !world.paused;
+                document.getElementById("button-run").innerHTML = (world.paused ? "Resume" : "Pause");
+            }
+
+            function mainloop()
+            {
+                world.update();
+                world.render();
+
+                requestAnimationFrame(mainloop);
+            }
+
+            restart();
+            mainloop();
+
+            function on_window_resize()
+            {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            window.addEventListener("resize", on_window_resize, false);
+
+            function on_pointer_down(event)
+            {
+                event.preventDefault();
+                grabber.start_grabbing(event.clientX, event.clientY);
+                if (grabber.subject) {
+                    controller.saveState();
+                    controller.enabled = false;
+                }
+            }
+
+            function on_pointer_move(event)
+            {
+                event.preventDefault();
+                grabber.grabbing(event.clientX, event.clientY);
+            }
+
+            function on_pointer_up(event)
+            {
+                event.preventDefault();
+                if (grabber.subject) {
+                    grabber.finish_grabbing(event.clientX, event.clientY);
+                    controller.reset();
+                    controller.enabled = true;
+                }
+            }
+
+            container.addEventListener('pointerdown', on_pointer_down, false);
+            container.addEventListener('pointermove', on_pointer_move, false);
+            container.addEventListener('pointerup',   on_pointer_up,   false);
+        </script>
+    </body>
+</html>
+
