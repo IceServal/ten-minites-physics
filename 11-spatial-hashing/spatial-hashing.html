@@ -1,0 +1,267 @@
+<!--
+Copyright 2022 Matthias Müller - Ten Minute Physics, https://www.youtube.com/channel/UCTG_vrRdKYfrpqCv_WV4eyA
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+
+<!DOCTYPE html>
+<html lang = "en">
+    <meta charset = "UTF-8" name = "viewport" content = "width = device-width, initial-scale = 1.0">
+
+    <head>
+        <title>Spatial Hashing</title>
+        <style>
+            body {
+                font-family: "Cascadia Code";
+                font-size: 15px;
+            };
+            .button {
+                background-color: #606060;
+                border: none;
+                color: white;
+                padding: 10px 32px;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+            };
+        </style>
+    </head>
+
+    <body>
+        <h1>Spatial Hashing</h1>
+        <button class = "button" type = "button" id = "button-run" onclick = "pause_or_resume()">Run</button>
+        <button class = "button" type = "button" id = "button-restart" onclick = "restart()">Restart</button>
+        <label> Gravity: <input class = "slider" type = "range" min = "0" max = "10" value = "0" id = "gravity-slider"></label>
+        <label><input class = "checkbox" type = "checkbox" id = "checkbox-colorful" onclick = "colorful()"> Colorful</label>
+
+        <br>
+        <br>
+        <span id = "num-particle">0</span> particles.
+        <span id = "render-time">0.000</span> ms per frame.
+
+        <br>
+        <br>
+        <div id = "container"></div>
+
+        <script src = "https://unpkg.com/three@0.139.2/build/three.min.js"></script>
+        <script src = "https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
+        <script src = "../tool/compact-vector.js"></script>
+        <script src = "./monoradius-ball-group.js"></script>
+        <script>
+            let initialized = false;
+
+            let scene;
+            let renderer;
+            let camera;
+            let controller;
+
+            let world = {
+                paused: true,
+
+                size: {x: 1.5, z: 2.5},
+                time: 0.0,
+                timeslice: 1.0 / 60.0,
+                num_substeps: 1,
+                subjects: [],
+
+                gravity: new THREE.Vector3(0.0, 0.0, 0.0),
+                bounds: [
+                    [-1.0, 1.0],
+                    [+0.0, 2.0],
+                    [-1.0, 1.0],
+                ],
+
+                update: function () {
+                    if (world.paused) return;
+
+                    let delta_time = world.timeslice / world.num_substeps;
+                    for (let i = 0; i < world.num_substeps; i++) {
+                        for (let j = 0; j < world.subjects.length; j++) {
+                            world.subjects[j].act(delta_time);
+                        }
+                    }
+
+                    world.time += world.timeslice;
+                },
+
+                render: function () {
+                    renderer.render(scene, camera);
+                },
+            };
+
+            function pause_or_resume()
+            {
+                world.paused = !world.paused;
+                document.getElementById("button-run").innerHTML = (world.paused ? "Resume" : "Pause");
+            }
+
+            function colorful()
+            {
+                for (let i = 0; i < world.subjects.length; i++) world.subjects[i].colorful = !world.subjects[i].colorful;
+            }
+
+            function create_monoradius_ball_group()
+            {
+                let radius = 0.025;
+                let spacing = 3.0 * radius;
+
+                let bounds = world.bounds;
+                let num_particles = 1;
+                let num_particles_align_axis = [];
+                for (let i = 0; i < bounds.length; i++) {
+                    let count = Math.floor(((bounds[i][1] - bounds[i][0]) - 2.0 * spacing) / spacing);
+                    num_particles *= count;
+                    num_particles_align_axis.push(count);
+                }
+
+                let velocity_bound = {
+                    min: -0.2,
+                    max: +0.2,
+                    width: 0.4,
+                };
+                let index = 0;
+                let positions = Compact_Vector3.from_size(num_particles);
+                let velocities = Compact_Vector3.from_size(num_particles);
+                for (let i = 0; i < num_particles_align_axis[0]; i++) {
+                    for (let j = 0; j < num_particles_align_axis[1]; j++) {
+                        for (let k = 0; k < num_particles_align_axis[2]; k++) {
+                            positions.assign_components_of(
+                                bounds[0][0] + spacing + i * spacing,
+                                bounds[1][0] + spacing + j * spacing,
+                                bounds[2][0] + spacing + k * spacing,
+                                1.0,
+                                index,
+                                1.0,
+                            );
+                            velocities.assign_components_of(
+                                velocity_bound.min + velocity_bound.width * Math.random(),
+                                velocity_bound.min + velocity_bound.width * Math.random(),
+                                velocity_bound.min + velocity_bound.width * Math.random(),
+                                1.0,
+                                index,
+                                1.0
+                            );
+                            index++;
+                        }
+                    }
+                }
+
+                return Monoradius_Ball_Group.from(radius, positions, velocities);
+            }
+
+            function restart()
+            {
+                world.paused = true;
+                document.getElementById("button-run").innerHTML = "Run";
+
+                scene = new THREE.Scene();
+
+                scene.add(new THREE.AmbientLight(0x505050));
+                scene.fog = new THREE.Fog(0x000000, 0.0, 15.0);
+
+                {
+                    let spot_light = new THREE.SpotLight(0xFFFFFF);
+                    spot_light.angle = Math.PI / 5.0;
+                    spot_light.penumbra = 0.2;
+                    spot_light.position.set(2.0, 3.0, 3.0);
+                    spot_light.castShadow = true;
+                    spot_light.shadow.camera.near = 3.0;
+                    spot_light.shadow.camera.fat = 10.0;
+                    spot_light.shadow.mapSize.width = 1024;
+                    spot_light.shadow.mapSize.height = 1024;
+                    scene.add(spot_light);
+                }
+
+                {
+                    let directional_light = new THREE.DirectionalLight(0x55505A, 1.0);
+                    directional_light.position.set(0.0, 3.0, 0.0);
+                    directional_light.castShadow = true;
+                    directional_light.shadow.camera.near = 1.0;
+                    directional_light.shadow.camera.far = 10.0;
+                    directional_light.shadow.camera.right = 1.0;
+                    directional_light.shadow.camera.left = -1.0;
+                    directional_light.shadow.camera.top = 1.0;
+                    directional_light.shadow.camera.bottom = -1.0;
+                    directional_light.shadow.mapSize.width = 1024;
+                    directional_light.shadow.mapSize.height = 1024;
+                    scene.add(directional_light);
+                }
+
+                {
+                    let ground = new THREE.Mesh(
+                        new THREE.PlaneBufferGeometry(20.0, 20.0, 1.0, 1.0),
+                        new THREE.MeshPhongMaterial({color: 0xA0ADAF, shininess: 150.0}),
+                    );
+                    ground.rotation.x = -Math.PI / 2.0;
+                    ground.receiveShadow = true;
+                    scene.add(ground);
+                }
+
+                {
+                    let helper = new THREE.GridHelper(20.0, 20.0);
+                    helper.material.opacity = 1.0;
+                    helper.material.transparent = true;
+                    helper.position.set(0.0, 0.002, 0.0);
+                    scene.add(helper);
+                }
+
+                {
+                    camera = new THREE.PerspectiveCamera(70.0, window.innerWidth / window.innerHeight, 0.01, 100.0);
+                    camera.position.set(0.0, 2.0, 4.0);
+                    camera.updateMatrixWorld();
+                    camera.updateProjectionMatrix();
+                    scene.add(camera);
+                }
+
+                if (!initialized) {
+                    initialized = true;
+
+                    renderer = new THREE.WebGLRenderer();
+                    renderer.shadowMap.enabled = true;
+                    renderer.setPixelRatio(window.devicePixelRatio);
+                    renderer.setSize(0.8 * window.innerWidth, 0.8 * window.innerHeight);
+                    container.appendChild(renderer.domElement);
+                }
+
+                renderer.setSize(window.innerWidth, window.innerHeight);
+
+                controller = new THREE.OrbitControls(camera, renderer.domElement);
+                controller.zoomSpeed = 2.0;
+                controller.panSpeed = 0.4;
+
+                {
+                    let monoradius_ball_group = create_monoradius_ball_group();
+                    scene.add(monoradius_ball_group.mesh);
+                    world.subjects = [monoradius_ball_group];
+                }
+            }
+
+            function mainloop()
+            {
+                world.update();
+                world.render();
+
+                requestAnimationFrame(mainloop);
+            }
+
+            restart();
+            mainloop();
+
+            function on_window_resize()
+            {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            window.addEventListener("resize", on_window_resize, false);
+
+            document.getElementById("gravity-slider").oninput = function () { world.gravity.y = -this.value; };
+        </script>
+    </body>
+</html>
+
