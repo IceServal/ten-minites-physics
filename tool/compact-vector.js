@@ -27,6 +27,19 @@ class Compact_Vector3
         return result;
     }
 
+    static from_float32_array(array)
+    {
+        if (array.length % 3 != 0) {
+            console.log("Cannot initialize compact vector3 with a float32 array of which size is not the multiple of 3.");
+            return new Compact_Vector3();
+        }
+
+        let result = new Compact_Vector3();
+        result.data = array;
+        result.size = array.length / 3;
+        return result;
+    }
+
     clone()
     {
         let result = new Compact_Vector3().copy(this);
