@@ -1,0 +1,259 @@
+<!--
+Copyright 2022 Matthias Müller - Ten Minute Physics, https://www.youtube.com/channel/UCTG_vrRdKYfrpqCv_WV4eyA
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+
+<!DOCTYPE html>
+<html lang = "en">
+    <meta charset = "UTF-8" name = "viewport" content = "width = device-width, initial-scale = 1.0">
+
+    <head>
+        <title>Raytracing</title>
+        <style>
+            body {
+                font-family: "Cascadia Code";
+                font-size: 15px;
+            };
+            .button {
+                background-color: #606060;
+                border: none;
+                color: white;
+                padding: 10px 32px;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+            };
+        </style>
+    </head>
+
+    <body>
+        <h1>Raytracing</h1>
+        <button class = "button" type = "button" id = "button-run" onclick = "pause_or_resume()">Run</button>
+        <button class = "button" type = "button" id = "button-restart" onclick = "restart()">Restart</button>
+
+        <br>
+        Ray beginning:
+        <label> x: <input type = "range" value = "0.0" min = "-1.0" max = "1.0" step = "0.1" id = "range-ray-beginning-x"/></label>
+        <label> y: <input type = "range" value = "0.0" min = "-1.0" max = "1.0" step = "0.1" id = "range-ray-beginning-y"/></label>
+        <label> z: <input type = "range" value = "0.0" min = "-1.0" max = "1.0" step = "0.1" id = "range-ray-beginning-z"/></label>
+        <br>
+        Ray direction:
+        <label> α: <input type = "range" value = "0.0" min =   "0.0" max = "360.0" step = "1" id = "range-ray-direction-alpha"/></label>
+        <label> β: <input type = "range" value = "0.0" min = "-90.0" max =  "90.0" step = "1" id = "range-ray-direction-beta"/></label>
+
+        <br>
+        <br>
+        <div id = "container"></div>
+
+        <script src = "https://unpkg.com/three@0.139.2/build/three.min.js"></script>
+        <script src = "https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
+        <script src = "../tool/math.js"></script>
+        <script src = "../tool/compact-vector.js"></script>
+        <script src = "../tool/bounding-box.js"></script>
+        <script src = "../tool/bounding-volume-hierarchy-tree.js"></script>
+        <script src = "../tool/testing.js"></script>
+        <script src = "./cube-skin.js"></script>
+        <script src = "./ray-drawer.js"></script>
+        <script src = "./raytracing-body.js"></script>
+        <script src = "./test.js"></script>
+        <script>
+            test();
+
+            let initialized = false;
+
+            let scene = undefined;
+            let renderer = undefined;
+            let camera = undefined;
+            let controller = undefined;
+
+            let world = {
+                paused: true,
+
+                time: 0.0,
+                timeslice: 1.0 / 60.0,
+                num_substeps: 10,
+                subjects: [],
+
+                gravity: new THREE.Vector3(0.0, -10.0, 0.0),
+
+                update: function () {
+                    if (world.paused) return;
+
+                    let delta_time = world.timeslice / world.num_substeps;
+                    for (let i = 0; i < world.num_substeps; i++) {
+                        for (let j = 0; j < world.subjects.length; j++) {
+                            world.subjects[j].update(delta_time);
+                        }
+                    }
+
+                    world.time += world.timeslice;
+                },
+
+                render: function () {
+                    for (let i = 0; i < world.subjects.length; i++) {
+                        world.subjects[i].render(world.timeslice);
+                    }
+                    renderer.render(scene, camera);
+                },
+            };
+
+            function pause_or_resume()
+            {
+                world.paused = !world.paused;
+                document.getElementById("button-run").innerHTML = (world.paused ? "Resume" : "Pause");
+            }
+
+            function restart()
+            {
+                world.paused = true;
+                document.getElementById("button-run").innerHTML = "Run";
+                document.getElementById("range-ray-beginning-x").value = 0.0;
+                document.getElementById("range-ray-beginning-y").value = 0.0;
+                document.getElementById("range-ray-beginning-z").value = 0.0;
+                document.getElementById("range-ray-direction-alpha").value = 0.0;
+                document.getElementById("range-ray-direction-beta").value = 0.0;
+
+                scene = new THREE.Scene();
+
+                scene.add(new THREE.AmbientLight(0x505050));
+                scene.fog = new THREE.Fog(0x000000, 0.0, 15.0);
+
+                {
+                    let spot_light = new THREE.SpotLight(0xFFFFFF);
+                    spot_light.angle = Math.PI / 5.0;
+                    spot_light.penumbra = 0.2;
+                    spot_light.position.set(2.0, 3.0, 3.0);
+                    spot_light.castShadow = true;
+                    spot_light.shadow.camera.near = 3.0;
+                    spot_light.shadow.camera.fat = 10.0;
+                    spot_light.shadow.mapSize.width = 1024;
+                    spot_light.shadow.mapSize.height = 1024;
+                    scene.add(spot_light);
+                }
+
+                {
+                    let directional_light = new THREE.DirectionalLight(0x55505A, 1.0);
+                    directional_light.position.set(0.0, 3.0, 0.0);
+                    directional_light.castShadow = true;
+                    directional_light.shadow.camera.near = 1.0;
+                    directional_light.shadow.camera.far = 10.0;
+                    directional_light.shadow.camera.right = 1.0;
+                    directional_light.shadow.camera.left = -1.0;
+                    directional_light.shadow.camera.top = 1.0;
+                    directional_light.shadow.camera.bottom = -1.0;
+                    directional_light.shadow.mapSize.width = 1024;
+                    directional_light.shadow.mapSize.height = 1024;
+                    scene.add(directional_light);
+                }
+
+                {
+                    let ground = new THREE.Mesh(
+                        new THREE.PlaneBufferGeometry(20.0, 20.0, 1.0, 1.0),
+                        new THREE.MeshPhongMaterial({color: 0xA0ADAF, shininess: 150.0}),
+                    );
+                    ground.rotation.x = -Math.PI / 2.0;
+                    ground.receiveShadow = true;
+                    scene.add(ground);
+                }
+
+                {
+                    let helper = new THREE.GridHelper(20.0, 20.0);
+                    helper.material.opacity = 1.0;
+                    helper.material.transparent = true;
+                    helper.position.set(0.0, 0.002, 0.0);
+                    scene.add(helper);
+                }
+
+                {
+                    camera = new THREE.PerspectiveCamera(70.0, window.innerWidth / window.innerHeight, 0.01, 100.0);
+                    camera.position.set(0.0, 1.0, 4.0);
+                    camera.updateMatrixWorld();
+                    camera.updateProjectionMatrix();
+                    scene.add(camera);
+                }
+
+                if (!initialized) {
+                    initialized = true;
+
+                    renderer = new THREE.WebGLRenderer();
+                    renderer.shadowMap.enabled = true;
+                    renderer.setPixelRatio(window.devicePixelRatio);
+                    renderer.setSize(0.8 * window.innerWidth, 0.8 * window.innerHeight);
+                    container.appendChild(renderer.domElement);
+                }
+
+                renderer.setSize(window.innerWidth, window.innerHeight);
+
+                controller = new THREE.OrbitControls(camera, renderer.domElement);
+                controller.zoomSpeed = 2.0;
+                controller.panSpeed = 0.4;
+
+                {
+                    world.subjects = [];
+                    let raytracing_body = Raytracing_Body.from(cube_skin);
+                    world.subjects.push(raytracing_body);
+                    let ray_drawer = Ray_Drawer.from(new THREE.Vector3(), new THREE.Vector3(1.0, 0.0, 0.0));
+                    world.subjects.push(ray_drawer);
+
+                    for (let i = 0; i < world.subjects.length; i++) {
+                        world.subjects[i].add_to(scene);
+                    }
+
+                    on_ray_input();
+                }
+            }
+
+            function mainloop()
+            {
+                world.update();
+                world.render();
+
+                requestAnimationFrame(mainloop);
+            }
+
+            restart();
+            mainloop();
+
+            function on_window_resize()
+            {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            window.addEventListener("resize", on_window_resize, false);
+
+            function on_ray_input()
+            {
+                let beginning = new THREE.Vector3(
+                    document.getElementById("range-ray-beginning-x").value * 1.0,
+                    document.getElementById("range-ray-beginning-y").value * 1.0,
+                    document.getElementById("range-ray-beginning-z").value * 1.0,
+                );
+                let alpha = document.getElementById("range-ray-direction-alpha").value / 180 * Math.PI;
+                let beta = document.getElementById("range-ray-direction-beta").value / 180 * Math.PI;
+                let direction = new THREE.Vector3(
+                    Math.cos(beta) * Math.cos(alpha),
+                    Math.sin(beta),
+                    Math.cos(beta) * Math.sin(alpha),
+                );
+
+                for (let i = 0; i < world.subjects.length; i++) {
+                    world.subjects[i].hit_by(beginning, direction);
+                }
+            }
+
+            document.getElementById("range-ray-beginning-x").oninput = on_ray_input;
+            document.getElementById("range-ray-beginning-y").oninput = on_ray_input;
+            document.getElementById("range-ray-beginning-z").oninput = on_ray_input;
+            document.getElementById("range-ray-direction-alpha").oninput = on_ray_input;
+            document.getElementById("range-ray-direction-beta").oninput = on_ray_input;
+        </script>
+    </body>
+</html>
+
