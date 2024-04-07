@@ -57,7 +57,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         <script src = "../tool/bounding-box.js"></script>
         <script src = "../tool/bounding-volume-hierarchy-tree.js"></script>
         <script src = "../tool/testing.js"></script>
-        <script src = "./cube-skin.js"></script>
+        <script src = "../shape/common.js"></script>
+        <script src = "../shape/cube.js"></script>
+        <script src = "../shape/dragon.js"></script>
         <script src = "./ray-drawer.js"></script>
         <script src = "./raytracing-body.js"></script>
         <script src = "./test.js"></script>
@@ -195,7 +197,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
                 {
                     world.subjects = [];
-                    let raytracing_body = Raytracing_Body.from(cube_skin);
+                    let raytracing_body = Raytracing_Body.from(shapes.dragon);
                     world.subjects.push(raytracing_body);
                     let ray_drawer = Ray_Drawer.from(new THREE.Vector3(), new THREE.Vector3(1.0, 0.0, 0.0));
                     world.subjects.push(ray_drawer);

@@ -7,11 +7,11 @@ class Soft_Body
         this.positions = Compact_Vector3.from_size(0);
         this.last_positions = this.positions.clone();
         this.velocities = Compact_Vector3.from_size(this.num_particles);
-        this.tetrahedron_indices = [];
-        this.tetrahedron_edge_indices = [];
+        this.solid_indices = [];
+        this.edge_indices = [];
         this.inverse_mass = new Float32Array(this.num_particles);
         this.rest_volumes = new Float32Array(this.num_tetrahedra);
-        this.rest_lengths = new Float32Array(this.tetrahedron_edge_indices.length / 2);
+        this.rest_lengths = new Float32Array(this.edge_indices.length / 2);
         this.length_compliance = 100.0;
         this.volume_compliance = 0.0;
         this.bounce_compliance = 0.0;
@@ -34,21 +34,24 @@ class Soft_Body
         this.surface_mesh = null;
     }
 
-    static from(soft_body_mesh, length_compliance = 0.0, volume_compliance = 0.0, color = 0xF02000)
+    static from(shape, length_compliance = 0.0, volume_compliance = 0.0, color = 0xF02000)
     {
         let result = new Soft_Body();
+        if (shape.skin.vertices != shape.bone.vertices) {
+            console.log("Soft body simulator can not simulate with the model of which bone vertices are not identical with skin vertices, please use skinned soft body simulator.");
+        }
 
-        result.num_particles = soft_body_mesh.vertices.length / 3;
-        result.num_tetrahedra = soft_body_mesh.tetrahedron_indices.length / 4;
-        result.positions = Compact_Vector3.from_array(soft_body_mesh.vertices);
+        result.num_particles = shape.bone.vertices.length / 3;
+        result.num_tetrahedra = shape.bone.solid_indices.length / 4;
+        result.positions = Compact_Vector3.from_array(shape.bone.vertices);
         result.last_positions = result.positions.clone();
         result.velocities = Compact_Vector3.from_size(result.num_particles);
 
-        result.tetrahedron_indices = soft_body_mesh.tetrahedron_indices;
-        result.tetrahedron_edge_indices = soft_body_mesh.tetrahedron_edge_indices;
+        result.solid_indices = shape.bone.solid_indices;
+        result.edge_indices = shape.bone.edge_indices;
         result.inverse_mass = new Float32Array(result.num_particles);
         result.rest_volumes = new Float32Array(result.num_tetrahedra);
-        result.rest_lengths = new Float32Array(result.tetrahedron_edge_indices.length / 2);
+        result.rest_lengths = new Float32Array(result.edge_indices.length / 2);
 
         result.length_compliance = length_compliance;
         result.volume_compliance = volume_compliance;
@@ -61,7 +64,7 @@ class Soft_Body
 
             let inverse_average_mass = (volume > 0.0 ? 1.0 / (volume / 4.0) : 0.0);
             for (let j = i * 4; j < i * 4 + 4; j++) {
-                result.inverse_mass[result.tetrahedron_indices[j]] += inverse_average_mass;
+                result.inverse_mass[result.solid_indices[j]] += inverse_average_mass;
             }
         }
         for (let i = 0; i < result.rest_lengths.length; i++) {
@@ -70,7 +73,7 @@ class Soft_Body
 
         let geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.BufferAttribute(result.positions.data, 3));
-        geometry.setIndex(soft_body_mesh.tetrahedron_surface_triangle_indices);
+        geometry.setIndex(shape.skin.indices);
         let material = new THREE.MeshPhongMaterial({color: color});
         material.flatShading = true;
         result.surface_mesh = new THREE.Mesh(geometry, material);
@@ -144,10 +147,10 @@ class Soft_Body
     _tetrahedron_volume_of(index)
     {
         index *= 4;
-        let index0 = this.tetrahedron_indices[index++];
-        let index1 = this.tetrahedron_indices[index++];
-        let index2 = this.tetrahedron_indices[index++];
-        let index3 = this.tetrahedron_indices[index++];
+        let index0 = this.solid_indices[index++];
+        let index1 = this.solid_indices[index++];
+        let index2 = this.solid_indices[index++];
+        let index3 = this.solid_indices[index++];
         this.volume_scratch.assign_difference_of(this.positions, this.positions, 0, index1, index0);
         this.volume_scratch.assign_difference_of(this.positions, this.positions, 1, index2, index0);
         this.volume_scratch.assign_difference_of(this.positions, this.positions, 2, index3, index0);
@@ -158,8 +161,8 @@ class Soft_Body
     _edge_length_of(index)
     {
         index *= 2;
-        let index0 = this.tetrahedron_edge_indices[index++];
-        let index1 = this.tetrahedron_edge_indices[index++];
+        let index0 = this.edge_indices[index++];
+        let index1 = this.edge_indices[index++];
         return Math.sqrt(this.positions.distance_square_from(this.positions, index0, index1));
     }
 
@@ -187,9 +190,9 @@ class Soft_Body
         let gradient_scratch = this.gradient_scratch;
 
         let alpha = this.length_compliance / delta_time / delta_time;
-        for (let i = 0, j = 0; i < this.tetrahedron_edge_indices.length;) {
-            index_scratch[0] = this.tetrahedron_edge_indices[i++];
-            index_scratch[1] = this.tetrahedron_edge_indices[i++];
+        for (let i = 0, j = 0; i < this.edge_indices.length;) {
+            index_scratch[0] = this.edge_indices[i++];
+            index_scratch[1] = this.edge_indices[i++];
             inverse_mass_scratch[0] = this.inverse_mass[index_scratch[0]];
             inverse_mass_scratch[1] = this.inverse_mass[index_scratch[1]];
 
@@ -215,9 +218,9 @@ class Soft_Body
         let gradient_scratch = this.gradient_scratch;
 
         let alpha = this.volume_compliance / delta_time / delta_time;
-        for (let i = 0, j = 0; i < this.tetrahedron_indices.length;) {
+        for (let i = 0, j = 0; i < this.solid_indices.length;) {
             for (let k = 0; k < 4; k++) {
-                index_scratch[k] = this.tetrahedron_indices[i++];
+                index_scratch[k] = this.solid_indices[i++];
                 inverse_mass_scratch[k] = this.inverse_mass[index_scratch[k]];
             }
 

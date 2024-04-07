@@ -40,7 +40,7 @@ function test()
 {
     let raytracing_testing = Raytracing_Testing.from();
 
-    let bounding_volume_hierarchy_tree = Bounding_Volume_Hierarchy_Tree.from(cube_skin);
+    let bounding_volume_hierarchy_tree = Bounding_Volume_Hierarchy_Tree.from(shapes.cube);
     let root_node = bounding_volume_hierarchy_tree.root_node;
     raytracing_testing.test_bounding_box(root_node, _vector3(-0.5, -0.5, -0.5), _vector3(+0.5, +0.5, +0.5), "@");
 

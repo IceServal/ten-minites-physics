@@ -19,21 +19,24 @@ class Skinned_Soft_Body
         this.grabbed_particle_inverse_mass = 0.0;
     }
 
-    static from(skin, bone, length_compliance = 0.0, volume_compliance = 0.0, skin_color = 0xF78A1D, bone_color = 0xFFFFFF)
+    static from(shape, length_compliance = 0.0, volume_compliance = 0.0, skin_color = 0xF78A1D, bone_color = 0xFFFFFF)
     {
         let result = new Skinned_Soft_Body();
 
+        let skin = shape.skin;
+        let bone = shape.bone;
+
         result.num_particles = bone.vertices.length / 3;
-        result.num_tetrahedra = bone.tetrahedron_indices.length / 4;
+        result.num_tetrahedra = bone.solid_indices.length / 4;
         result.positions = Compact_Vector3.from_array(bone.vertices);
         result.last_positions = result.positions.clone();
         result.velocities = Compact_Vector3.from_size(result.num_particles);
 
-        result.tetrahedron_indices = bone.tetrahedron_indices;
-        result.tetrahedron_edge_indices = bone.tetrahedron_edge_indices;
+        result.solid_indices = bone.solid_indices;
+        result.edge_indices = bone.edge_indices;
         result.inverse_mass = new Float32Array(result.num_particles);
         result.rest_volumes = new Float32Array(result.num_tetrahedra);
-        result.rest_lengths = new Float32Array(result.tetrahedron_edge_indices.length / 2);
+        result.rest_lengths = new Float32Array(result.edge_indices.length / 2);
 
         result.length_compliance = length_compliance;
         result.volume_compliance = volume_compliance;
@@ -47,7 +50,7 @@ class Skinned_Soft_Body
 
             let inverse_average_mass = (volume > 0.0 ? 1.0 / (volume / 4.0) : 0.0);
             for (let j = i * 4; j < i * 4 + 4; j++) {
-                result.inverse_mass[result.tetrahedron_indices[j]] += inverse_average_mass;
+                result.inverse_mass[result.solid_indices[j]] += inverse_average_mass;
             }
         }
         for (let i = 0; i < result.rest_lengths.length; i++) {
@@ -57,7 +60,7 @@ class Skinned_Soft_Body
         {
             let geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.BufferAttribute(result.positions.data, 3));
-            geometry.setIndex(result.tetrahedron_edge_indices);
+            geometry.setIndex(result.edge_indices);
             let material = new THREE.LineBasicMaterial({color: result.bone_color, linewidth: 2.0});
             result.bone_mesh = new THREE.LineSegments(geometry, material);
             result.bone_mesh.visible = false;
@@ -65,7 +68,7 @@ class Skinned_Soft_Body
         }
 
         result.num_vertices = skin.vertices.length / 3;
-        result.num_triangles = skin.triangle_indices.length / 3;
+        result.num_triangles = skin.indices.length / 3;
         result.skin_attachment = new Float32Array(result.num_vertices);
         result.skin_coordinates = new Float32Array(4 * result.num_vertices);
         result._skinning(skin);
@@ -73,7 +76,7 @@ class Skinned_Soft_Body
         {
             let geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3 * result.num_vertices), 3));
-            geometry.setIndex(skin.triangle_indices);
+            geometry.setIndex(skin.indices);
             let material = new THREE.MeshPhongMaterial({color: result.skin_color});
             result.skin_mesh = new THREE.Mesh(geometry, material);
             result.skin_mesh.castShadow = true;
@@ -158,10 +161,10 @@ class Skinned_Soft_Body
     _tetrahedron_volume_of(index)
     {
         index *= 4;
-        let index0 = this.tetrahedron_indices[index++];
-        let index1 = this.tetrahedron_indices[index++];
-        let index2 = this.tetrahedron_indices[index++];
-        let index3 = this.tetrahedron_indices[index++];
+        let index0 = this.solid_indices[index++];
+        let index1 = this.solid_indices[index++];
+        let index2 = this.solid_indices[index++];
+        let index3 = this.solid_indices[index++];
         this.volume_scratch.assign_difference_of(this.positions, this.positions, 0, index1, index0);
         this.volume_scratch.assign_difference_of(this.positions, this.positions, 1, index2, index0);
         this.volume_scratch.assign_difference_of(this.positions, this.positions, 2, index3, index0);
@@ -172,8 +175,8 @@ class Skinned_Soft_Body
     _edge_length_of(index)
     {
         index *= 2;
-        let index0 = this.tetrahedron_edge_indices[index++];
-        let index1 = this.tetrahedron_edge_indices[index++];
+        let index0 = this.edge_indices[index++];
+        let index1 = this.edge_indices[index++];
         return Math.sqrt(this.positions.distance_square_from(this.positions, index0, index1));
     }
 
@@ -201,9 +204,9 @@ class Skinned_Soft_Body
         let gradient_scratch = this.gradient_scratch;
 
         let alpha = this.length_compliance / delta_time / delta_time;
-        for (let i = 0, j = 0; i < this.tetrahedron_edge_indices.length;) {
-            index_scratch[0] = this.tetrahedron_edge_indices[i++];
-            index_scratch[1] = this.tetrahedron_edge_indices[i++];
+        for (let i = 0, j = 0; i < this.edge_indices.length;) {
+            index_scratch[0] = this.edge_indices[i++];
+            index_scratch[1] = this.edge_indices[i++];
             inverse_mass_scratch[0] = this.inverse_mass[index_scratch[0]];
             inverse_mass_scratch[1] = this.inverse_mass[index_scratch[1]];
 
@@ -229,9 +232,9 @@ class Skinned_Soft_Body
         let gradient_scratch = this.gradient_scratch;
 
         let alpha = this.volume_compliance / delta_time / delta_time;
-        for (let i = 0, j = 0; i < this.tetrahedron_indices.length;) {
+        for (let i = 0, j = 0; i < this.solid_indices.length;) {
             for (let k = 0; k < 4; k++) {
-                index_scratch[k] = this.tetrahedron_indices[i++];
+                index_scratch[k] = this.solid_indices[i++];
                 inverse_mass_scratch[k] = this.inverse_mass[index_scratch[k]];
             }
 
@@ -267,10 +270,10 @@ class Skinned_Soft_Body
         for (let i = 0, j = 0; i < this.num_tetrahedra; i++) {
             skinning_scratch.clear(0, skinning_scratch.size);
 
-            let index0 = this.tetrahedron_indices[j++];
-            let index1 = this.tetrahedron_indices[j++];
-            let index2 = this.tetrahedron_indices[j++];
-            let index3 = this.tetrahedron_indices[j++];
+            let index0 = this.solid_indices[j++];
+            let index1 = this.solid_indices[j++];
+            let index2 = this.solid_indices[j++];
+            let index3 = this.solid_indices[j++];
             skinning_scratch.add(this.positions, 3, index0, 0.25);
             skinning_scratch.add(this.positions, 3, index1, 0.25);
             skinning_scratch.add(this.positions, 3, index2, 0.25);
@@ -327,10 +330,10 @@ class Skinned_Soft_Body
         skin_positions.clear(0, skin_positions.size);
         for (let i = 0, j = 0; i < this.num_vertices; i++) {
             let tetrahedron_index_index = this.skin_attachment[i] * 4;
-            let index0 = this.tetrahedron_indices[tetrahedron_index_index++];
-            let index1 = this.tetrahedron_indices[tetrahedron_index_index++];
-            let index2 = this.tetrahedron_indices[tetrahedron_index_index++];
-            let index3 = this.tetrahedron_indices[tetrahedron_index_index++];
+            let index0 = this.solid_indices[tetrahedron_index_index++];
+            let index1 = this.solid_indices[tetrahedron_index_index++];
+            let index2 = this.solid_indices[tetrahedron_index_index++];
+            let index3 = this.solid_indices[tetrahedron_index_index++];
             let b1 = this.skin_coordinates[j++];
             let b2 = this.skin_coordinates[j++];
             let b3 = this.skin_coordinates[j++];

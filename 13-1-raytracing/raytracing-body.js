@@ -8,15 +8,15 @@ class Raytracing_Body
         this.color1 = new THREE.Color(0x00FF00);
     }
 
-    static from(skin)
+    static from(shape)
     {
         let result = new Raytracing_Body();
-        result.bounding_volume_hierarchy_tree = Bounding_Volume_Hierarchy_Tree.from(skin);
+        result.bounding_volume_hierarchy_tree = Bounding_Volume_Hierarchy_Tree.from(shape);
 
         {
             let geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(skin.vertices), 3));
-            geometry.setIndex(skin.triangle_indices);
+            geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(shape.skin.vertices), 3));
+            geometry.setIndex(shape.skin.indices);
             let material = new THREE.MeshPhongMaterial({color: 0xFFFFFF});
             material.flatShading = true;
             result.skin_mesh = new THREE.Mesh(geometry, material);

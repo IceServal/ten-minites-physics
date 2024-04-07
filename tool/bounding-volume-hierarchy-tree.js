@@ -14,15 +14,17 @@ class Bounding_Volume_Hierarchy_Tree
         this.root_node = null;
     }
 
-    static from(skin)
+    static from(shape)
     {
         let result = new Bounding_Volume_Hierarchy_Tree();
         let leaf_nodes = [];
-        for (let i = 0; i < skin.triangle_indices.length;) {
-            let index0 = skin.triangle_indices[i++];
-            let index1 = skin.triangle_indices[i++];
-            let index2 = skin.triangle_indices[i++];
-            let leaf_node = _Leaf_Node.from(skin.vertices, index0, index1, index2);
+        let vertices = shape.skin.vertices;
+        let indices = shape.skin.indices;
+        for (let i = 0; i < indices.length;) {
+            let index0 = indices[i++];
+            let index1 = indices[i++];
+            let index2 = indices[i++];
+            let leaf_node = _Leaf_Node.from(vertices, index0, index1, index2);
             if (leaf_node.normal.x == 0 && leaf_node.normal.y == 0 && leaf_node.normal.z == 0) continue;
             leaf_nodes.push(leaf_node);
         }

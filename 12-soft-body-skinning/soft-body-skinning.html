@@ -56,8 +56,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         <script src = "../tool/matrix.js"></script>
         <script src = "../tool/hasher.js"></script>
         <script src = "../tool/skinned-soft-body.js"></script>
-        <script src = "./dragon-skin.js"></script>
-        <script src = "./dragon-bone.js"></script>
+        <script src = "../shape/common.js"></script>
+        <script src = "../shape/dragon.js"></script>
         <script>
             let initialized = false;
 
@@ -203,7 +203,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
                 {
                     let length_compliance = document.getElementById("slider-compliance").value * 10.0;
-                    let dragon = Skinned_Soft_Body.from(dragon_skin, dragon_bone, length_compliance);
+                    let dragon = Skinned_Soft_Body.from(shapes.dragon, length_compliance);
                     world.subjects = [dragon];
                     scene.add(dragon.bone_mesh);
                     scene.add(dragon.skin_mesh);
