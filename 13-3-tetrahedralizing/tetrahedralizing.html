@@ -1,0 +1,297 @@
+<!--
+Copyright 2022 Matthias Müller - Ten Minute Physics, https://www.youtube.com/channel/UCTG_vrRdKYfrpqCv_WV4eyA
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+
+<!DOCTYPE html>
+<html lang = "en">
+    <meta charset = "UTF-8" name = "viewport" content = "width = device-width, initial-scale = 1.0">
+
+    <head>
+        <title>Tetrahedralizing</title>
+        <style>
+            body {
+                font-family: "Cascadia Code";
+                font-size: 15px;
+            };
+            .button {
+                background-color: #606060;
+                border: none;
+                color: white;
+                padding: 10px 32px;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+            };
+        </style>
+    </head>
+
+    <body>
+        <h1>Tetrahedralizing</h1>
+        <button class = "button" type = "button" id = "button-run" onclick = "pause_or_resume()">Run</button>
+        <button class = "button" type = "button" id = "button-step" onclick = "step()">Step</button>
+        <button class = "button" type = "button" id = "button-skip" onclick = "skip()">Skip</button>
+        <button class = "button" type = "button" id = "button-restart" onclick = "restart()">Restart</button>
+
+        <br>
+        <br>
+        <label for = "number-resolution">Resolution</label>
+        <input id = "number-resolution" type = "number" min = "0" value = "8"/>
+        <label for = "number-min-quality">Min Quality</label>
+        <input id = "number-min-quality" type = "number" max = "0" value = "-3"/>
+        <label for = "number-step-size">Step Size</label>
+        <input id = "number-step-size" type = "number" min = "1" value = "1"/>
+        <fieldset id = "radio-view-mode">
+            <legend>View Mode</legend>
+            <span>
+                <input id = "radio-mode-edge" type = "radio" name = "view-mode" value = "edge" checked/>
+                <label for = "radio-edge">Edge</label>
+            </span>
+            <span>
+                <input id = "radio-mode-bone" type = "radio" name = "view-mode" value = "solid"/>
+                <label for = "radio-bone">Solid</label>
+            </span>
+        </fieldset>
+        <span id = "num-tetrahedra">0</span> tetrahedra,
+        <span id = "num-triangles">0</span> triangles,
+        <span id = "num-vertices">0</span> vertices.
+
+        <br>
+        <br>
+        <div id = "container"></div>
+
+        <script src = "https://unpkg.com/three@0.139.2/build/three.min.js"></script>
+        <script src = "https://unpkg.com/three@0.139.2/examples/js/controls/OrbitControls.js"></script>
+        <script src = "../tool/compact-vector.js"></script>
+        <script src = "../tool/matrix.js"></script>
+        <script src = "../tool/hasher.js"></script>
+        <script src = "../tool/math.js"></script>
+        <script src = "../tool/bounding-box.js"></script>
+        <script src = "../tool/bounding-volume-hierarchy-tree.js"></script>
+        <script src = "../tool/tetrahedra-visualizer.js"></script>
+        <script src = "../tool/tetrahedralizer.js"></script>
+        <script src = "../shape/common.js"></script>
+        <script src = "../shape/cube.js"></script>
+        <script src = "../shape/tetrahedron.js"></script>
+        <script>
+            let scene = null;
+            let camera = null;
+            let renderer = null;
+            let controller = null;
+            let lights = [];
+
+            {
+                let spot_light = new THREE.SpotLight(0xFFFFFF);
+                spot_light.angle = Math.PI / 5.0;
+                spot_light.penumbra = 0.2;
+                spot_light.position.set(2.0, 3.0, 3.0);
+                spot_light.castShadow = true;
+                spot_light.shadow.camera.near = 3.0;
+                spot_light.shadow.camera.fat = 10.0;
+                spot_light.shadow.mapSize.width = 1024;
+                spot_light.shadow.mapSize.height = 1024;
+                lights.push(spot_light);
+            }
+
+            {
+                let directional_light = new THREE.DirectionalLight(0x55505A, 1.0);
+                directional_light.position.set(0.0, 3.0, 0.0);
+                directional_light.castShadow = true;
+                directional_light.shadow.camera.near = 1.0;
+                directional_light.shadow.camera.far = 10.0;
+                directional_light.shadow.camera.right = 1.0;
+                directional_light.shadow.camera.left = -1.0;
+                directional_light.shadow.camera.top = 1.0;
+                directional_light.shadow.camera.bottom = -1.0;
+                directional_light.shadow.mapSize.width = 1024;
+                directional_light.shadow.mapSize.height = 1024;
+                lights.push(directional_light);
+            }
+
+            {
+                camera = new THREE.PerspectiveCamera(70.0, window.innerWidth / window.innerHeight, 0.01, 100.0);
+                camera.position.set(0.0, 1.0, 4.0);
+                camera.updateMatrixWorld();
+                camera.updateProjectionMatrix();
+            }
+
+            {
+                renderer = new THREE.WebGLRenderer();
+                renderer.shadowMap.enabled = true;
+                renderer.setPixelRatio(window.devicePixelRatio);
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                container.appendChild(renderer.domElement);
+            }
+
+            {
+                controller = new THREE.OrbitControls(camera, renderer.domElement);
+                controller.zoomSpeed = 2.0;
+                controller.panSpeed = 0.4;
+            }
+
+            let world = {
+                paused: true,
+                shape: shapes.tetrahedron,
+                config: new Tetrahedralization_Config(),
+                view_mode: "edge",
+                step_size: 1,
+                max_subdivision: 1,
+
+                time: 0.0,
+                timeslice: 1.0 / 60.0,
+                num_substeps: 1,
+                subject: null,
+
+                gravity: new THREE.Vector3(0.0, -10.0, 0.0),
+
+                update: function () {
+                    if (world.paused) return;
+
+                    for (let i = 0; i < world.num_substeps; i++) {
+                        step();
+                    }
+
+                    world.time += world.timeslice;
+                },
+
+                render: function () {
+                    renderer.render(scene, camera);
+                },
+            };
+
+            function pause_or_resume()
+            {
+                world.paused = !world.paused;
+                document.getElementById("button-run").innerHTML = (world.paused ? "Resume" : "Pause");
+            }
+
+            function prepare_max_subdivision()
+            {
+                let skip_config = world.config.clone();
+                skip_config.return_max_subdivision = true;
+                world.max_subdivision = tetrahedralize(world.shape, skip_config);
+            }
+
+            function prepare_scene()
+            {
+                scene = new THREE.Scene();
+
+                scene.add(camera);
+                scene.add(new THREE.AmbientLight(0x505050));
+                for (let i = 0; i < lights.length; i++) {
+                    scene.add(lights[i]);
+                }
+            }
+
+            function step()
+            {
+                if (world.config.num_subdivision < world.max_subdivision) {
+                    world.config.num_subdivision += world.step_size;
+                    simulate();
+                } else {
+                    // Stop stepping forward.
+                }
+            }
+
+            function skip()
+            {
+                world.paused = true;
+                document.getElementById("button-run").innerHTML = "Run";
+
+                prepare_max_subdivision();
+                world.config.num_subdivision = world.max_subdivision;
+                simulate();
+            }
+
+            function simulate()
+            {
+                prepare_scene();
+
+                let shape = world.shape;
+                shape.bone = tetrahedralize(shape, world.config);
+
+                let subject = Tetrahedra_Visualizer.from(shape);
+                subject.switch_mode(world.view_mode);
+                subject.add_to(scene);
+
+                document.getElementById("num-tetrahedra").innerHTML = subject.num_tetrahedra;
+                document.getElementById("num-triangles").innerHTML = subject.num_triangles;
+                document.getElementById("num-vertices").innerHTML = subject.num_vertices;
+
+                world.subject = subject;
+            }
+
+            function restart()
+            {
+                world.paused = true;
+                document.getElementById("button-run").innerHTML = "Run";
+
+                let config = world.config;
+                config.resolution = document.getElementById("number-resolution").valueAsNumber;
+                config.min_quality_exponent = document.getElementById("number-min-quality").valueAsNumber;
+                config.num_subdivision = 0;
+                world.max_subdivision = undefined;
+
+                world.step_size = document.getElementById("number-step-size").valueAsNumber;
+
+                let radios = document.querySelectorAll(`input[type = "radio"][name = "view-mode"]`);
+                radios.forEach(radio => {
+                    if (radio.checked) {
+                        world.view_mode = radio.value;
+                    }
+                });
+
+                prepare_max_subdivision();
+                simulate();
+
+                document.getElementById("num-tetrahedra").innerHTML = 0;
+                document.getElementById("num-triangles").innerHTML = 0;
+                document.getElementById("num-vertices").innerHTML = 0;
+            }
+
+            function mainloop()
+            {
+                world.update();
+                world.render();
+
+                requestAnimationFrame(mainloop);
+            }
+
+            restart();
+            mainloop();
+
+            function on_window_resize()
+            {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            window.addEventListener("resize", on_window_resize, false);
+
+            document.getElementById("number-resolution").addEventListener("change", (event) => {
+                world.config.resolution = event.target.value;
+                prepare_max_subdivision();
+                simulate();
+            });
+            document.getElementById("number-min-quality").addEventListener("change", (event) => {
+                world.config.min_quality_exponent = event.target.value;
+                prepare_max_subdivision();
+                simulate();
+            });
+            document.getElementById("number-step-size").addEventListener("change", (event) => {
+                world.step_size = event.target.value;
+            });
+            document.getElementById("radio-view-mode").addEventListener("change", (event) => {
+                world.view_mode = event.target.value;
+                world.subject.switch_mode(world.view_mode);
+            });
+        </script>
+    </body>
+</html>
+
