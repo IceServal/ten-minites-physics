@@ -14,6 +14,16 @@ class Axis_Aligned_Bounding_Box
         return result;
     }
 
+    static from_points(points)
+    {
+        let result = new Axis_Aligned_Bounding_Box();
+        for (let i = 0; i < points.length; i++) {
+            result.min.min(points[i]);
+            result.max.max(points[i]);
+        }
+        return result;
+    }
+
     static from_triangle_mesh(point0, point1, point2)
     {
         let result = new Axis_Aligned_Bounding_Box();
@@ -48,6 +58,13 @@ class Axis_Aligned_Bounding_Box
     {
         this.min.min(a.min);
         this.max.max(a.max);
+        return this;
+    }
+
+    merge_point(a)
+    {
+        this.min.min(a);
+        this.max.max(a);
         return this;
     }
 

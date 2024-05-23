@@ -23,3 +23,86 @@ function is_point_inside_triangle(point, point0, point1, point2)
     );
 }
 
+class Sphere
+{
+    constructor()
+    {
+        this.center = undefined;
+        this.radius = undefined;
+    }
+
+    static from(center, radius)
+    {
+        let result = new Sphere();
+        result.center = center;
+        result.radius = radius;
+        return result;
+    }
+
+    clone()
+    {
+        return new Sphere().copy(this);
+    }
+
+    copy(a)
+    {
+        this.center = a.center;
+        this.radius = a.radius;
+        return this;
+    }
+};
+
+function tetrahedron_circumsphere(point0, point1, point2, point3)
+{
+    let v01 = point1.clone().sub(point0);
+    let v02 = point2.clone().sub(point0);
+    let v03 = point3.clone().sub(point0);
+    let l01 = v01.lengthSq();
+    let l02 = v02.lengthSq();
+    let l03 = v03.lengthSq();
+    let cross102 = v01.clone().cross(v02);
+    let cross203 = v02.clone().cross(v03);
+    let cross301 = v03.clone().cross(v01);
+    let volume = v01.dot(cross203);
+    if (volume == 0.0) {
+        return null;
+    } else {
+        let offset = new THREE.Vector3().addScaledVector(cross203, l01).addScaledVector(cross301, l02).addScaledVector(cross102, l03).divideScalar(2.0 * volume);
+        return Sphere.from(point0.clone().add(offset), offset.length());
+    }
+}
+
+function tetrahedron_quality(point0, point1, point2, point3)
+{
+    let v01 = point1.clone().sub(point0);
+    let v02 = point2.clone().sub(point0);
+    let v03 = point3.clone().sub(point0);
+    let v12 = point2.clone().sub(point1);
+    let v23 = point3.clone().sub(point2);
+    let v31 = point1.clone().sub(point3);
+    let square_sum = v01.lengthSq() + v02.lengthSq() + v03.lengthSq() + v12.lengthSq() + v23.lengthSq() + v31.lengthSq();
+    let square_root_of_square_sum = Math.sqrt(square_sum);
+    let volume = v01.dot(v02.clone().cross(v03));
+    return 12.0 * Math.sqrt(3) * volume / (square_root_of_square_sum * square_root_of_square_sum * square_root_of_square_sum);
+}
+
+function barycentric_coordinate_of_tetrahedron(point, point0, point1, point2, point3)
+{
+    let v01 = point1.clone().sub(point0);
+    let v02 = point2.clone().sub(point0);
+    let v03 = point3.clone().sub(point0);
+    let mat = new THREE.Matrix3();
+    mat.set(
+        v01.x, v02.x, v03.x,
+        v01.y, v02.y, v03.y,
+        v01.z, v02.z, v03.z,
+    ).invert();
+    let v0p = point.clone().sub(point0);
+    return v0p.applyMatrix3(mat);
+}
+
+function random_epsilon(epsilon = 1e-3)
+{
+    return (Math.random() - 0.5) * 2 * epsilon;
+}
+
