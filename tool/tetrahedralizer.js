@@ -3,13 +3,23 @@ class Tetrahedralization_Config
     constructor()
     {
         this.resolution = 10;
+        this.subdivide_mesh = true;
+        this.sort_indexed_points = false;
+
         this.min_quality = undefined;
         this.min_quality_exponent = -3;
-        this.sort_indexed_points = false;
-        this.exclude_outside_tetrahedron = true;
         this.exclude_low_quality_tetrahedron = true;
-        this.return_max_subdivision = false;
+
+        this.epsilon = undefined;
+        this.epsilon_base = 1e-3;
+        this.randomly_float_coordinates = true;
+        this.automatically_scale_epsilon = true;
+
+        this.bounding_radius_scale = 5.0;
+
         this.num_subdivision = Infinity;
+        this.return_max_subdivision = false;
+        this.exclude_outside_tetrahedron = true;
     }
 
     clone()
@@ -20,12 +30,23 @@ class Tetrahedralization_Config
     copy(a)
     {
         this.resolution = a.resolution;
+        this.subdivide_mesh = a.subdivide_mesh;
+        this.sort_indexed_points = a.sort_indexed_points;
+
         this.min_quality = a.min_quality;
         this.min_quality_exponent = a.min_quality_exponent;
-        this.exclude_outside_tetrahedron = a.exclude_outside_tetrahedron;
         this.exclude_low_quality_tetrahedron = a.exclude_low_quality_tetrahedron;
-        this.return_max_subdivision = a.return_max_subdivision;
+
+        this.epsilon = a.epsilon;
+        this.epsilon_base = a.epsilon_base;
+        this.randomly_float_coordinates = a.randomly_float_coordinates;
+        this.automatically_scale_epsilon = a.automatically_scale_epsilon;
+
+        this.bounding_radius_scale = a.bounding_radius_scale;
+
         this.num_subdivision = a.num_subdivision;
+        this.return_max_subdivision = a.return_max_subdivision;
+        this.exclude_outside_tetrahedron = a.exclude_outside_tetrahedron;
 
         return this;
     }
@@ -35,9 +56,13 @@ function tetrahedralize(shape, config)
 {
     if (config.min_quality_exponent != undefined) {
         config.min_quality = 10 ** Math.min(config.min_quality_exponent, 0);    // The regular tetrahedron has 1.0 quality.
+    } else {
+        if (typeof(config.min_quality) != "number" && config.exclude_low_quality_tetrahedron) {
+            throw new Error("ERROR: Missing min quality for excluding low quality tetrahedron.");
+        }
     }
 
-    let prepare_data = (shape, resolution) => {
+    let prepare_data = (shape, config) => {
         let indexed_points = [];
         let center = new THREE.Vector3();
         let tree = Bounding_Volume_Hierarchy_Tree.from(shape);
@@ -54,13 +79,35 @@ function tetrahedralize(shape, config)
             aabb.merge_point(indexed_point.point);
             center.addScaledVector(indexed_point.point, center_divisor);
         }
-        if (resolution > 0.0) {
+        if (config.subdivide_mesh) {
+            if (typeof(config.resolution) != "number") {
+                throw new Error("ERROR: Missing resolution for subdivide mesh.");
+            }
             let span = aabb.max.clone().sub(aabb.min);
-            let step = Math.max(span.x, span.y, span.z) / resolution;
+            let step = Math.max(span.x, span.y, span.z) / config.resolution;
+            if (config.automatically_scale_epsilon) {
+                if (typeof(config.epsilon_base) != "number") {
+                    throw new Error("ERROR: Missing epsilon base for automatically scaling epsilon.");
+                } else {
+                    config.epsilon = step * config.epsilon_base;
+                }
+            }
+            if (config.randomly_float_coordinates && typeof(config.epsilon) != "number") {
+                throw new Error("ERROR: Missing epsilon for randomly floating coordinates.");
+            }
             for (let x = aabb.min.x; x <= aabb.max.x; x += step) {
                 for (let y = aabb.min.y; y <= aabb.max.y; y += step) {
                     for (let z = aabb.min.z; z <= aabb.max.z; z += step) {
-                        let indexed_point = _Indexed_Point.from(x, y, z);
+                        let indexed_point = undefined;
+                        if (config.randomly_float_coordinates) {
+                            indexed_point = _Indexed_Point.from(
+                                x + random_epsilon(config.epsilon),
+                                y + random_epsilon(config.epsilon),
+                                z + random_epsilon(config.epsilon),
+                            );
+                        } else {
+                            indexed_point = _Indexed_Point.from(x, y, z);
+                        }
                         if (tree.is_point_inside(indexed_point.point)) {
                             indexed_points.push(indexed_point);
                         } else {
@@ -78,12 +125,15 @@ function tetrahedralize(shape, config)
         };
     };
 
-    let create_bounding_tetrahedron = (indexed_points, center) => {
+    let create_bounding_tetrahedron = (indexed_points, center, config) => {
         let squared_radius = -Infinity;
         for (let i = 0; i < indexed_points.length; i++) {
             squared_radius = Math.max(squared_radius, indexed_points[i].point.distanceToSquared(center));
         }
-        let safe_radius = 5.0 * Math.sqrt(squared_radius);
+        if (typeof(config.bounding_radius_scale) != "number") {
+            throw new Error("ERROR: Missing bounding radius for creating bounding tetrahedron.");
+        }
+        let safe_radius = config.bounding_radius_scale * Math.sqrt(squared_radius);
         return _Tetrahedron.from(
             _Indexed_Point.from(center.x - safe_radius, center.y, center.z - safe_radius),
             _Indexed_Point.from(center.x + safe_radius, center.y, center.z - safe_radius),
@@ -162,11 +212,11 @@ function tetrahedralize(shape, config)
         return bone;
     }
 
-    let data = prepare_data(shape, config.resolution);
+    let data = prepare_data(shape, config);
     if (config.return_max_subdivision) {
         return data.indexed_points.length;
     } else {
-        let bounding_tetrahedron = create_bounding_tetrahedron(data.indexed_points, data.center);
+        let bounding_tetrahedron = create_bounding_tetrahedron(data.indexed_points, data.center, config);
         if (config.sort_indexed_points) data.indexed_points = sort_indexed_points(data.indexed_points, data.center);
         return create_bone(bounding_tetrahedron, data.indexed_points, data.tree, config);
     }
@@ -264,18 +314,42 @@ class _Tetrahedron_Cluster
         result.num_absorbed_tetrahedra = 0;
         result.num_bad_searching = 0;
         for (let i = 0; i < Math.min(indexed_points.length, config.num_subdivision); i++) {
-            result._subdivide_with(indexed_points[i]);
+            result._subdivide_with(indexed_points[i], config);
         }
         result._beneficiate(bounding_volume_hierarchy_tree, config);
         return result;
     }
 
-    _subdivide_with(indexed_point)
+    _subdivide_with(indexed_point, config)
     {
         let seed_tetrahedron = this._try_locate(indexed_point.point);
         if (seed_tetrahedron) {
+            let circumsphere = tetrahedron_circumsphere(
+                seed_tetrahedron.indexed_points[0].point,
+                seed_tetrahedron.indexed_points[1].point,
+                seed_tetrahedron.indexed_points[2].point,
+                seed_tetrahedron.indexed_points[3].point,
+            );
+            let quality = tetrahedron_quality(
+                seed_tetrahedron.indexed_points[0].point,
+                seed_tetrahedron.indexed_points[1].point,
+                seed_tetrahedron.indexed_points[2].point,
+                seed_tetrahedron.indexed_points[3].point,
+            );
+            if (indexed_point.point.distanceTo(circumsphere.center) > circumsphere.radius) {
+                console.log("[subdivide with] using a bad seed tetrahedron: ", quality);
+                for (let i = 0; i < 4; i++) {   // A tetrahedron is composed of 4 triangles.
+                    let distance = indexed_point.point.clone().sub(seed_tetrahedron.indexed_points[i].point).dot(seed_tetrahedron.triangles_normals[i]);
+                    console.log("distance: ", distance);
+                }
+                return;
+            }
+            if (quality < 1e-3) {
+                console.log("[subdivide with] using a zero seed tetrahedron: ", quality);
+            }
+
             let crystal = _Crystal.from(seed_tetrahedron, indexed_point, this);     // Crystal will update the attributes of tetrahedron cluster.
-            crystal.grow();
+            crystal.grow(config.epsilon);
             crystal.fracture();
             this._clear_absorbed_tetrahedra(0.2);
         } else {
@@ -309,7 +383,6 @@ class _Tetrahedron_Cluster
                 pending0.mask = visit_mask;
 
                 let found_hint = 0;
-                let bad_tetrahedron_hint = 0;
                 let max_distance = -Infinity;
                 for (let i = 0; i < 4; i++) {   // A tetrahedron is composed of 4 triangles.
                     let distance = point.clone().sub(pending0.indexed_points[i].point).dot(pending0.triangles_normals[i]);
@@ -321,12 +394,9 @@ class _Tetrahedron_Cluster
                         }
                     } else {
                         found_hint++;
-                        if (distance == 0.0) {
-                            bad_tetrahedron_hint++;
-                        }
                     }
                 }
-                if (found_hint == 4 && bad_tetrahedron_hint != 4) {
+                if (found_hint == 4) {
                     return pending0;
                 }
                 if (pending1) {
@@ -524,8 +594,12 @@ class _Crystal
         return result;
     }
 
-    grow()
+    grow(epsilon)
     {
+        if (typeof(epsilon) != "number") {
+            throw new Error("ERROR: Missing epsilon for checking violating tetrahedron.");
+        }
+
         let pending0 = this.crystal_triangles;
         let pending1 = [];
         this.crystal_triangles = [];
@@ -552,10 +626,25 @@ class _Crystal
                             merging1 = surfaces[j];
                         }
                     }
+                    if (merging1.absorbed) {
+                        console.log("[Crystal Grow] Try to merging a merged triangle.");
+                    }
                     let offset = undefined;     // Find the beginning offset for triangle vertices traversing.
                     for (let j = 0; j < 3; j++) {   // A crystal triangle has 3 indexed points.
                         if (merging0.indexed_points[j] == merging1.indexed_points[0]) {
                             offset = j;
+                        }
+                    }
+                    if (offset == undefined) {
+                        console.log("[Crystal Grow] Failed to find index offset, the merging triangles are mismatched.");
+                    } else {
+                        if (
+                            false
+                            || merging0.indexed_points[(offset + 3) % 3] != merging1.indexed_points[0]
+                            || merging0.indexed_points[(offset + 2) % 3] != merging1.indexed_points[1]
+                            || merging0.indexed_points[(offset + 1) % 3] != merging1.indexed_points[2]
+                        ) {
+                            console.log("[Crystal Grow] Same order merging triangle.");
                         }
                     }
                     // If the neighboring crystal triangle of the neighboring crystal triangle
@@ -584,7 +673,7 @@ class _Crystal
                         adjacent_tetrahedron.indexed_points[2].point,
                         adjacent_tetrahedron.indexed_points[3].point,
                     );
-                    if (this.nucleus.point.distanceTo(circumsphere.center) <= circumsphere.radius) {
+                    if (circumsphere.radius < epsilon || this.nucleus.point.distanceTo(circumsphere.center) <= circumsphere.radius) {
                         // Create a free crystal which will be dropped immediately but it's crystal
                         // triangles will be pushed into pending crystal triangles and be checked in
                         // the next iteration. Notice that the nucleus indexed point is not inside
@@ -613,6 +702,11 @@ class _Crystal
         let crystal_triangles = this.crystal_triangles;
         let num_crystal_triangles = crystal_triangles.length;
         for (let i = 0; i < num_crystal_triangles; i++) {
+            for (let j = 0; j < 3; j++) {
+                if (crystal_triangles[i].neighbors[j].absorbed) {
+                    console.log("[Fracture] There are absorbed neighbors crystal triangles in the neighbors of final crystal triangles.");
+                }
+            }
             crystal_triangles[i].create_tetrahedron(this.nucleus);
         }
         for (let i = 0; i < num_crystal_triangles; i++) {
