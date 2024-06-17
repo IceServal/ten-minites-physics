@@ -80,7 +80,7 @@ function tetrahedralize(shape, config)
             center.addScaledVector(indexed_point.point, center_divisor);
         }
         if (config.subdivide_mesh) {
-            if (typeof(config.resolution) != "number") {
+            if (config.resolution == undefined) {
                 throw new Error("ERROR: Missing resolution for subdivide mesh.");
             }
             let span = aabb.max.clone().sub(aabb.min);
