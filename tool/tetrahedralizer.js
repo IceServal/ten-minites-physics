@@ -324,36 +324,12 @@ class _Tetrahedron_Cluster
     {
         let seed_tetrahedron = this._try_locate(indexed_point.point);
         if (seed_tetrahedron) {
-            let circumsphere = tetrahedron_circumsphere(
-                seed_tetrahedron.indexed_points[0].point,
-                seed_tetrahedron.indexed_points[1].point,
-                seed_tetrahedron.indexed_points[2].point,
-                seed_tetrahedron.indexed_points[3].point,
-            );
-            let quality = tetrahedron_quality(
-                seed_tetrahedron.indexed_points[0].point,
-                seed_tetrahedron.indexed_points[1].point,
-                seed_tetrahedron.indexed_points[2].point,
-                seed_tetrahedron.indexed_points[3].point,
-            );
-            if (indexed_point.point.distanceTo(circumsphere.center) > circumsphere.radius) {
-                console.log("[subdivide with] using a bad seed tetrahedron: ", quality);
-                for (let i = 0; i < 4; i++) {   // A tetrahedron is composed of 4 triangles.
-                    let distance = indexed_point.point.clone().sub(seed_tetrahedron.indexed_points[i].point).dot(seed_tetrahedron.triangles_normals[i]);
-                    console.log("distance: ", distance);
-                }
-                return;
-            }
-            if (quality < 1e-3) {
-                console.log("[subdivide with] using a zero seed tetrahedron: ", quality);
-            }
-
             let crystal = _Crystal.from(seed_tetrahedron, indexed_point, this);     // Crystal will update the attributes of tetrahedron cluster.
             crystal.grow(config.epsilon);
             crystal.fracture();
             this._clear_absorbed_tetrahedra(0.2);
         } else {
-            console.log("We can never fail to find a seed tetrahedron, only if the bounding tetrahedron can not bound the indexed points.");
+            throw new Error("ERROR: Failed to find a seed tetrahedron, something bad happened.");
         }
     }
 
@@ -673,7 +649,12 @@ class _Crystal
                         adjacent_tetrahedron.indexed_points[2].point,
                         adjacent_tetrahedron.indexed_points[3].point,
                     );
-                    if (circumsphere.radius < epsilon || this.nucleus.point.distanceTo(circumsphere.center) <= circumsphere.radius) {
+                    if (
+                        false
+                        || circumsphere == null
+                        || circumsphere.radius < epsilon
+                        || this.nucleus.point.distanceTo(circumsphere.center) <= circumsphere.radius
+                    ) {
                         // Create a free crystal which will be dropped immediately but it's crystal
                         // triangles will be pushed into pending crystal triangles and be checked in
                         // the next iteration. Notice that the nucleus indexed point is not inside
