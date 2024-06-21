@@ -53,6 +53,16 @@ class Compact_Vector3
         return this;
     }
 
+    num_floats()
+    {
+        return this.size * 3;
+    }
+
+    num_items()
+    {
+        return this.size;
+    }
+
     clear(index, count = 1)
     {
         for (let i = index * 3; i < (index + count) * 3; i++) this.data[i] = 0.0;
@@ -111,6 +121,36 @@ class Compact_Vector3
         return this;
     }
 
+    x(index)
+    {
+        return this.data[index * 3];
+    }
+
+    y(index)
+    {
+        return this.data[index * 3 + 1];
+    }
+
+    z(index)
+    {
+        return this.data[index * 3 + 2];
+    }
+
+    assign_x(index, value)
+    {
+        this.data[index * 3] = value;
+    }
+
+    assign_y(index, value)
+    {
+        this.data[index * 3 + 1] = value;
+    }
+
+    assign_z(index, value)
+    {
+        this.data[index * 3 + 2] = value;
+    }
+
     add(a, index0, index1, scaling = 1.0, count = 1)
     {
         index0 *= 3;
@@ -139,6 +179,11 @@ class Compact_Vector3
         return this;
     }
 
+    length(index)
+    {
+        return Math.sqrt(this.length_square(index));
+    }
+
     length_square(index)
     {
         index *= 3;
@@ -146,6 +191,11 @@ class Compact_Vector3
         let y = this.data[index + 1];
         let z = this.data[index + 2];
         return x * x + y * y + z * z;
+    }
+
+    distance_from(a, index0, index1)
+    {
+        return Math.sqrt(this.distance_square_from(a, index0, index1));
     }
 
     distance_square_from(a, index0, index1)
