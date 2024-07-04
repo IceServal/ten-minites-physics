@@ -136,6 +136,16 @@ class Compact_Vector3
         return this.data[index * 3 + 2];
     }
 
+    xyz(index)
+    {
+        let result = {};
+        index = index * 3;
+        result.x = this.data[index++];
+        result.y = this.data[index++];
+        result.z = this.data[index++];
+        return result;
+    }
+
     assign_x(index, value)
     {
         this.data[index * 3] = value;

@@ -74,6 +74,38 @@ class Hasher
         }
     }
 
+    self_inspect(distance)
+    {
+        let result = {
+            indices: new Float32Array(this.num_objects * 2),
+            offsets: new Float32Array(this.num_objects + 1),
+        };
+        let next_offset = 0;
+        let distance_square = distance * distance;
+        for (let i = 0; i < this.num_objects; i++) {
+            result.offsets[i] = next_offset;
+
+            let position = this.borrowed_positions.xyz(i);
+            this.concern_about(position.x, position.y, position.z, Math.ceil(distance / this.spacing));
+            for (let j = 0; j < this.concern_count; j++) {
+                let entry = this.concern_entries[j];
+                if (entry <= i) continue;
+
+                if (this.borrowed_positions.distance_square_from(this.borrowed_positions, i, entry) >= distance_square) continue;
+
+                if (next_offset >= result.indices.length) {
+                    let double_sized_indices = new Float32Array(result.indices.length * 2);
+                    double_sized_indices.set(result.indices);
+                    result.indices = double_sized_indices;
+                }
+
+                result.indices[next_offset++] = entry;
+            }
+        }
+        result.offsets[this.num_objects] = next_offset;
+        return result;
+    }
+
     _grid_index_of(a)
     {
         return Math.floor(a / this.spacing);
