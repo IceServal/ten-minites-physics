@@ -40,11 +40,18 @@ class World
     {
         if (this.paused) return;
 
-        let delta_time = this.planck_time / this.num_steps;
+        let planck_time = this.planck_time;
+        for (let i = 0; i < this.fields.length; i++) this.fields[i].prepare(planck_time);
+        for (let i = 0; i < this.constrains.length; i++) this.constrains[i].prepare(planck_time);
+
+        let delta_time = planck_time / this.num_steps;
         for (let i = 0; i < this.num_steps; i++) {
             for (let j = 0; j < this.fields.length; j++) this.fields[j].apply(delta_time);
             for (let j = 0; j < this.constrains.length; j++) this.constrains[j].apply(delta_time);
         }
+
+        for (let i = 0; i < this.fields.length; i++) this.fields[i].finalize(planck_time);
+        for (let i = 0; i < this.constrains.length; i++) this.constrains[i].finalize(planck_time);
     }
 
     render(canvas)

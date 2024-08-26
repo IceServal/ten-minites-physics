@@ -30,12 +30,16 @@ class Proportional_Acceleration_Field
         kinematic_body.acceleration.add(this.acceleration);
     }
 
+    prepare() {}
+
     apply()
     {
         for (let i = 0; i < this.subjects.length; i++) {
             this.act_on(this.subjects[i]);
         }
     }
+
+    finalize() {}
 
     render(canvas) {}
 };
