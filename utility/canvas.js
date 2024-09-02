@@ -92,12 +92,11 @@ class Canvas
         this.context.beginPath();
         this.context.moveTo(p0.x, p0.y);
         this.context.lineTo(p1.x, p1.y);
-        this.context.closePath();
         this.context.stroke();
         this.context.lineWidth = old_width;
     }
 
-    render_line_strip(points, width, color = "#000000")
+    render_line_strip(points, width, color = "#000000", close = false)
     {
         let num_points = points.length;
         if (num_points < 2) return;
@@ -110,11 +109,13 @@ class Canvas
         this.context.beginPath();
         let p = this.plotting_scale.world_to_canvas(points[0]);
         this.context.moveTo(p.x, p.y);
-        for (let i = 1; i < num_points + 1; i++) {
-            p = this.plotting_scale.world_to_canvas(points[i % num_points]);
+        for (let i = 1; i < num_points; i++) {
+            p = this.plotting_scale.world_to_canvas(points[i]);
             this.context.lineTo(p.x, p.y);
         }
-        this.context.closePath();
+        if (close) {
+            this.context.closePath();
+        }
         this.context.stroke();
         this.context.lineWidth = old_width;
     }
