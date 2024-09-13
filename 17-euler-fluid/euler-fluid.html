@@ -1,0 +1,470 @@
+<!--
+Copyright 2022 Matthias Müller - Ten Minute Physics, https://www.youtube.com/channel/UCTG_vrRdKYfrpqCv_WV4eyA
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+
+<!DOCTYPE html>
+<html lang = "en">
+    <meta charset = "UTF-8" name = "viewport" content = "width = device-width, initial-scale = 1.0">
+
+    <head>
+        <title>Euler Fluid</title>
+        <style>
+            body {
+                font-family: "Cascadia Code";
+                font-size: 15px;
+                fieldset {
+                    display: inline-block;
+                };
+                input[type = "range"] {
+                    height: 15px;
+                };
+            };
+            .button {
+                background-color: #606060;
+                border: none;
+                color: white;
+                padding: 10px 10px;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+            };
+            .slider {
+                appearance: none;
+                width: 80px;
+                height: 6px;
+                border-radius: 5px;
+                background: #D3D3D3;
+                outline: none;
+                opacity: 0.7;
+                transition: opacity 0.2s;
+            };
+        </style>
+    </head>
+
+    <body>
+        <fieldset id = "mode">
+            <legend>Mode</legend>
+            <label><input type = "radio" id = "tank" name = "mode" value = "tank" checked/>Tank</label>
+            <label><input type = "radio" id = "paint" name = "mode" value = "paint"/>Paint</label>
+            <label><input type = "radio" id = "wind-tunnel" name = "mode" value = "wind-tunnel"/>Wind Tunnel</label>
+            <label><input type = "radio" id = "hires-tunnel" name = "mode" value = "hires-tunnel"/>Hires Tunnel</label>
+		</fieldset>
+
+        <fieldset>
+            <legend>Relexation</legend>
+            <input type = "range" min = "0" max = "10" value = "9" id = "relexation">
+		</fieldset>
+
+        <fieldset>
+            <legend>Display</legend>
+            <label><input type = "checkbox" id = "smoke" onclick = "show_smoke()">Smoke</label>
+            <label><input type = "checkbox" id = "pressure" onclick = "show_pressure()">Pressure</label>
+            <label><input type = "checkbox" id = "velocity" onclick = "show_velocity()">Velocity</label>
+            <label><input type = "checkbox" id = "streamline" onclick = "show_streamline()">Streamline</label>
+		</fieldset>
+
+        <br>
+        <br>
+        <canvas id = "canvas"></canvas>
+        <script src = "../utility/math/vector.js"></script>
+        <script src = "../utility/math/line.js"></script>
+        <script src = "../utility/canvas.js"></script>
+        <script src = "../utility/math/shape/circle.js"></script>
+        <script src = "../utility/physics/component/mass.js"></script>
+        <script src = "../utility/physics/rigid-body/disk.js"></script>
+        <script src = "../utility/physics/field/clear-velocity.js"></script>
+        <script src = "../utility/physics/field/clear-acceleration.js"></script>
+        <script src = "../utility/physics/field/proportional-acceleration.js"></script>
+        <script src = "../utility/world.js"></script>
+        <script src = "./euler-fluid.js"></script>
+        <script>
+            let min_simulation_size = 1.0;
+            let canvas_size = Vector2.from_components(window.innerWidth - 10, window.innerHeight - 100);
+            let canvas_to_world_scale = min_simulation_size / Math.min(canvas_size.x, canvas_size.y);
+            let world_size = canvas_size.clone().scale(canvas_to_world_scale);
+
+            let plotting_scale = Plotting_Scale.from(world_size, canvas_size, 1.0 / canvas_to_world_scale);
+            let canvas = Canvas.from("canvas", plotting_scale, true);
+
+            let fluid = undefined;
+            let obstacle = undefined;
+
+            function restart()
+            {
+                let update_num_substeps = 40;
+                let planck_time = 1.0 / 60.0;
+                let gravity = Vector2.from_components();
+                let density = 1000.0;
+                let obstacle_radius = 0.15;
+                let obstacle_center = Vector2.from_components(0.4, 0.5);
+                let obstacle_fill_color = "#DDDDDD";
+                let obstacle_edge_color = "#000000";
+                let obstacle_edge_width = 0.006;
+                let in_velocity = 2.0;
+                let fluid_config = new Euler_Fluid_Config();
+
+                let mode = undefined;
+                let radios = document.querySelectorAll(`input[type = "radio"][name = "mode"]`);
+                radios.forEach(radio => {
+                    if (radio.checked) {
+                        mode = radio.value;
+                    }
+                });
+                switch (mode) {
+                    case "tank": {
+                        gravity = Vector2.from_components(0.0, -9.8);
+
+                        let resolution = 50;
+                        let grid_length = Math.min(world_size.x, world_size.y) / resolution;
+                        fluid_config.grid_size.x = Math.floor(world_size.x / grid_length);
+                        fluid_config.grid_size.y = Math.floor(world_size.y / grid_length);
+                        fluid_config.grid_length = grid_length;
+                        fluid_config.density = density;
+                        fluid_config.show_pressure = true;
+
+                        let grid_size = fluid_config.grid_size;
+                        let default_x_weights = new Uint8Array((grid_size.x + 1) * grid_size.y);
+                        let default_y_weights = new Uint8Array(grid_size.x * (grid_size.y + 1));
+                        default_x_weights.fill(1);
+                        default_y_weights.fill(1);
+                        for (let i = 0; i < grid_size.y; i++) {
+                            let index = i * (grid_size.x + 1);
+                            default_x_weights[index] = 0;
+                            default_x_weights[index + grid_size.x] = 0;
+                        }
+                        for (let i = 0; i < grid_size.x; i++) {
+                            default_y_weights[i] = 0;
+                        }
+                        fluid_config.default_x_weights = default_x_weights;
+                        fluid_config.default_y_weights = default_y_weights;
+
+                        break;
+                    }
+
+                    case "paint": {
+                        obstacle_radius = 0.1;
+
+                        let resolution = 100;
+                        let grid_length = Math.min(world_size.x, world_size.y) / resolution;
+                        fluid_config.grid_size.x = Math.floor(world_size.x / grid_length);
+                        fluid_config.grid_size.y = Math.floor(world_size.y / grid_length);
+                        fluid_config.grid_length = grid_length;
+                        fluid_config.density = density;
+                        fluid_config.relexation = 0.0;
+                        fluid_config.show_smoke = true;
+                        fluid_config.colorful_smoke = true;
+                        fluid_config.dynamic_obstacle_smoke = true;
+
+                        let grid_size = fluid_config.grid_size;
+                        let default_x_weights = new Uint8Array((grid_size.x + 1) * grid_size.y);
+                        let default_y_weights = new Uint8Array(grid_size.x * (grid_size.y + 1));
+                        default_x_weights.fill(1);
+                        default_y_weights.fill(1);
+                        for (let i = 0; i < grid_size.y; i++) {
+                            let index = i * (grid_size.x + 1);
+                            default_x_weights[index] = 0;
+                            default_x_weights[index + grid_size.x] = 0;
+                        }
+                        let last = default_y_weights.length - 1;
+                        for (let i = 0; i < grid_size.x; i++) {
+                            default_y_weights[i] = 0;
+                            default_y_weights[last - i] = 0;
+                        }
+                        fluid_config.default_x_weights = default_x_weights;
+                        fluid_config.default_y_weights = default_y_weights;
+
+                        break;
+                    }
+
+                    case "wind-tunnel": {
+                        let resolution = 100;
+                        let grid_length = Math.min(world_size.x, world_size.y) / resolution;
+                        fluid_config.grid_size.x = Math.floor(world_size.x / grid_length);
+                        fluid_config.grid_size.y = Math.floor(world_size.y / grid_length);
+                        fluid_config.grid_length = grid_length;
+                        fluid_config.density = density;
+                        fluid_config.show_smoke = true;
+
+                        let grid_size = fluid_config.grid_size;
+                        let default_x_weights = new Uint8Array((grid_size.x + 1) * grid_size.y);
+                        let default_y_weights = new Uint8Array(grid_size.x * (grid_size.y + 1));
+                        default_x_weights.fill(1);
+                        default_y_weights.fill(1);
+                        for (let i = 0; i < grid_size.y; i++) {
+                            let index = i * (grid_size.x + 1);
+                            default_x_weights[index] = 0;
+                        }
+                        let last = default_y_weights.length - 1;
+                        for (let i = 0; i < grid_size.x; i++) {
+                            default_y_weights[i] = 0;
+                            default_y_weights[last - i] = 0;
+                        }
+                        fluid_config.default_x_weights = default_x_weights;
+                        fluid_config.default_y_weights = default_y_weights;
+
+                        let initial_x_velocities = new Float32Array(fluid_config.default_x_weights.length);
+                        for (let i = 0; i < grid_size.y; i++) {
+                            let index = i * (grid_size.x + 1);
+                            initial_x_velocities[index] = in_velocity;
+                        }
+                        fluid_config.initial_x_velocities = initial_x_velocities;
+
+                        let num_grids = grid_size.x * grid_size.y;
+                        let initial_smokes = new Float32Array(num_grids);
+                        initial_smokes.fill(1.0);
+                        let num_tunnel_occupied_grids = Math.floor(grid_size.y / 9.0);
+                        for (let i = num_tunnel_occupied_grids * 4; i < num_tunnel_occupied_grids * 5; i++) {
+                            let index = i * grid_size.x;
+                            initial_smokes[index] = 0.0;
+                        }
+                        fluid_config.initial_smokes = initial_smokes;
+
+                        let default_grid_weights = new Uint8Array(num_grids);
+                        default_grid_weights.fill(1);
+                        for (let i = 0; i < grid_size.y; i++) {
+                            let index = i * grid_size.x;
+                            default_grid_weights[index] = 0;
+                        }
+                        last = default_grid_weights.length - 1;
+                        for (let i = 0; i < grid_size.x; i++) {
+                            default_grid_weights[i] = 0;
+                            default_grid_weights[last - i] = 0;
+                        }
+                        fluid_config.default_grid_weights = default_grid_weights;
+
+                        break;
+                    }
+
+                    case "hires-tunnel": {
+                        update_num_substeps = 100;
+                        planck_time = 1.0 / 120.0;
+
+                        let resolution = 200;
+                        let grid_length = Math.min(world_size.x, world_size.y) / resolution;
+                        fluid_config.grid_size.x = Math.floor(world_size.x / grid_length);
+                        fluid_config.grid_size.y = Math.floor(world_size.y / grid_length);
+                        fluid_config.grid_length = grid_length;
+                        fluid_config.density = density;
+                        fluid_config.show_smoke = true;
+                        fluid_config.show_pressure = true;
+
+                        let grid_size = fluid_config.grid_size;
+                        let default_x_weights = new Uint8Array((grid_size.x + 1) * grid_size.y);
+                        let default_y_weights = new Uint8Array(grid_size.x * (grid_size.y + 1));
+                        default_x_weights.fill(1);
+                        default_y_weights.fill(1);
+                        for (let i = 0; i < grid_size.y; i++) {
+                            let index = i * (grid_size.x + 1);
+                            default_x_weights[index] = 0;
+                        }
+                        let last = default_y_weights.length - 1;
+                        for (let i = 0; i < grid_size.x; i++) {
+                            default_y_weights[i] = 0;
+                            default_y_weights[last - i] = 0;
+                        }
+                        fluid_config.default_x_weights = default_x_weights;
+                        fluid_config.default_y_weights = default_y_weights;
+
+                        let initial_x_velocities = new Float32Array(fluid_config.default_x_weights.length);
+                        for (let i = 0; i < grid_size.y; i++) {
+                            let index = i * (grid_size.x + 1);
+                            initial_x_velocities[index] = in_velocity;
+                        }
+                        fluid_config.initial_x_velocities = initial_x_velocities;
+
+                        let num_grids = grid_size.x * grid_size.y;
+                        let initial_smokes = new Float32Array(num_grids);
+                        initial_smokes.fill(1.0);
+                        let num_tunnel_occupied_grids = Math.floor(grid_size.y / 9.0);
+                        for (let i = num_tunnel_occupied_grids * 4; i < num_tunnel_occupied_grids * 5; i++) {
+                            let index = i * grid_size.x;
+                            initial_smokes[index] = 0.0;
+                        }
+                        fluid_config.initial_smokes = initial_smokes;
+
+                        let default_grid_weights = new Uint8Array(num_grids);
+                        default_grid_weights.fill(1);
+                        for (let i = 0; i < grid_size.y; i++) {
+                            let index = i * grid_size.x;
+                            default_grid_weights[index] = 0;
+                        }
+                        last = default_grid_weights.length - 1;
+                        for (let i = 0; i < grid_size.x; i++) {
+                            default_grid_weights[i] = 0;
+                            default_grid_weights[last - i] = 0;
+                        }
+                        fluid_config.default_grid_weights = default_grid_weights;
+
+                        break;
+                    }
+                }
+
+                world = World.from(world_size, update_num_substeps, planck_time);
+
+                obstacle = Disk.from(
+                    Circle.from(obstacle_center, obstacle_radius),
+                    density,
+                    Vector2.from_components(),
+                    0.0,
+                    obstacle_fill_color,
+                    obstacle_edge_color,
+                    obstacle_edge_width,
+                );
+
+                fluid = Euler_Fluid.from(fluid_config);
+                fluid.obstacles.push(obstacle);
+
+                let clear_velocity = Clear_Velocity_Field.from();
+                let clear_acceleration = Clear_Acceleration_Field.from();
+                let proportional_acceleration = Proportional_Acceleration_Field.from(gravity);
+
+                clear_velocity.subjects.push(obstacle);
+                clear_acceleration.subjects.push(fluid);
+                proportional_acceleration.subjects.push(fluid);
+
+                world.fields.push(clear_acceleration);
+                world.fields.push(proportional_acceleration);
+                world.fields.push(fluid);
+                world.fields.push(clear_velocity);
+                world.subjects.push(obstacle);
+
+                document.getElementById("relexation").value = fluid_config.relexation * 10;
+
+                document.getElementById("smoke").checked = fluid_config.show_smoke;
+                document.getElementById("pressure").checked = fluid_config.show_pressure;
+                document.getElementById("velocity").checked = fluid_config.show_velocity;
+                document.getElementById("streamline").checked = fluid_config.show_streamline;
+            }
+
+            function show_smoke()
+            {
+                let config = fluid.config;
+                config.show_smoke = !config.show_smoke;
+            }
+
+            function show_pressure()
+            {
+                let config = fluid.config;
+                config.show_pressure = !config.show_pressure;
+            }
+
+            function show_velocity()
+            {
+                let config = fluid.config;
+                config.show_velocity = !config.show_velocity;
+            }
+
+            function show_streamline()
+            {
+                let config = fluid.config;
+                config.show_streamline = !config.show_streamline;
+            }
+
+            function mainloop()
+            {
+                world.on_frame(canvas);
+
+                requestAnimationFrame(mainloop);
+            }
+
+            restart();
+            mainloop();
+
+            document.getElementById("relexation").oninput = function () {
+                fluid.config.relexation = this.value / 10.0;
+            };
+            document.getElementById("mode").addEventListener("change", (event) => {
+                restart();
+            });
+            document.addEventListener("keydown", event => {
+                switch (event.key) {
+                    case 'p': {
+                        world.pause_or_resume();
+                        break;
+                    }
+
+                    case 'm': {
+                        world.step();
+                        break;
+                    }
+                }
+            });
+
+            function configure_obstacle_smoke()
+            {
+                let config = fluid.config;
+                if (config.dynamic_obstacle_smoke) {
+                    config.obstacle_smoke = 0.5 + 0.5 * (Math.sin(0.1 * world.num_frames) > 0.0 ? 1.0 : -1.0);
+                }
+                config.enable_obstacle_overlap_smoke = true;
+            }
+
+            let grabbing = false;
+
+            function grab(position)
+            {
+                grabbing = true;
+
+                world.paused = false;
+
+                let position_world = canvas.plotting_scale.canvas_to_world(canvas.window_to_canvas(position));
+                obstacle.body.center = position_world;
+
+                configure_obstacle_smoke();
+            }
+
+            function move(position)
+            {
+                if (!grabbing) return;
+
+                world.paused = false;
+
+                let position_world = canvas.plotting_scale.canvas_to_world(canvas.window_to_canvas(position));
+                let old_position_world = world.subjects[0].body.center;
+                obstacle.velocity.copy(position_world.clone().subtract(old_position_world).scale(1.0 / world.planck_time));
+                old_position_world.copy(position_world);
+
+                configure_obstacle_smoke();
+            }
+
+            function drop(position)
+            {
+                grabbing = false;
+            }
+
+            canvas.add_event_listener("mousedown", event => {
+                grab(Vector2.from_components(event.x, event.y));
+            });
+            canvas.add_event_listener("mousemove", event => {
+                move(Vector2.from_components(event.x, event.y));
+            });
+            canvas.add_event_listener("mouseup", event => {
+                drop(Vector2.from_components(event.x, event.y));
+            });
+            canvas.add_event_listener("touchstart", event => {
+                grab(Vector2.from_components(event.touches[0].clientX, event.touches[0].clientY));
+            });
+            canvas.add_event_listener(
+                "touchmove",
+                event => {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    move(Vector2.from_components(event.touches[0].clientX, event.touches[0].clientY));
+                },
+                {
+                    passive: false
+                },
+            );
+            canvas.add_event_listener("touchend", event => {
+                drop(Vector2.from_components(event.touches[0].clientX, event.touches[0].clientY));
+            });
+        </script>
+    </body>
+</html>
+

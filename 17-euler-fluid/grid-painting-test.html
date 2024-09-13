@@ -1,0 +1,110 @@
+<!--
+Copyright 2022 Matthias Müller - Ten Minute Physics, https://www.youtube.com/channel/UCTG_vrRdKYfrpqCv_WV4eyA
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+
+<!DOCTYPE html>
+<html lang = "en">
+    <meta charset = "UTF-8" name = "viewport" content = "width = device-width, initial-scale = 1.0">
+
+    <head>
+        <title>Grid Painting Test</title>
+        <style>
+            body {
+                font-family: "Cascadia Code";
+                font-size: 15px;
+            };
+            .button {
+                background-color: #606060;
+                border: none;
+                color: white;
+                padding: 10px 10px;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+            };
+            .slider {
+                appearance: none;
+                width: 80px;
+                height: 6px;
+                border-radius: 5px;
+                background: #D3D3D3;
+                outline: none;
+                opacity: 0.7;
+                transition: opacity 0.2s;
+            };
+        </style>
+    </head>
+
+    <body>
+        <h1>Grid Painting Test</h1>
+
+        <button class = "button" type = "button" id = "button-step" onclick = "step()">Step</button>
+
+        <br>
+        <br>
+        <canvas id = "canvas"></canvas>
+        <script src = "../utility/math/vector.js"></script>
+        <script src = "../utility/canvas.js"></script>
+        <script>
+            let min_simulation_size = 1.0;
+            let canvas_size = Vector2.from_components(window.innerWidth - 20, window.innerHeight - 150)
+            let canvas_to_world_scale = min_simulation_size / Math.min(canvas_size.x, canvas_size.y);
+            let world_size = canvas_size.clone().scale(canvas_to_world_scale);
+
+            let plotting_scale = Plotting_Scale.from(world_size, canvas_size, 1.0 / canvas_to_world_scale);
+            let canvas = Canvas.from("canvas", plotting_scale);
+
+            let resolution = 10;
+            let grid_length = Math.min(world_size.x, world_size.y) / resolution;
+            num_x_grids = Math.floor(world_size.x / grid_length);
+            num_y_grids = Math.floor(world_size.y / grid_length);
+
+            let i = 0;
+            let j = 0;
+            let generator = () => {
+                if (j >= num_y_grids) {
+                    i = 0;
+                    j = 0;
+                    return undefined;
+                }
+
+                let result = {};
+                let x = i * grid_length;
+                let y = j * grid_length;
+                result.point0 = Vector2.from_components(x, y);
+                result.point1 = Vector2.from_components(x + grid_length, y + grid_length);
+                result.color = ((i + j) % 2 ? [255, 0, 0, 255] : [0, 255, 0, 255]);
+
+                i++;
+                if (i >= num_x_grids) {
+                    i = 0;
+                    j++;
+                }
+                return result;
+            };
+
+            let active = true;
+            let step_generator = () => {
+                if (active) {
+                    active = false;
+                    return generator();
+                } else {
+                    active = true;
+                    return undefined;
+                }
+            };
+
+            function step()
+            {
+                canvas.render_grid(step_generator);
+            }
+        </script>
+    </body>
+</html>
+
