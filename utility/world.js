@@ -6,6 +6,7 @@ class World
         this.num_steps = 1;
         this.planck_time = 1.0 / 60.0;
         this.size = new Vector2();
+        this.num_frames = 0;
 
         this.subjects = [];
         this.fields = [];
@@ -60,6 +61,13 @@ class World
         for (let i = 0; i < this.fields.length; i++) this.fields[i].render(canvas);
         for (let i = 0; i < this.constrains.length; i++) this.constrains[i].render(canvas);
         for (let i = 0; i < this.subjects.length; i++) this.subjects[i].render(canvas);
+    }
+
+    on_frame(canvas)
+    {
+        this.update();
+        this.render(canvas);
+        this.num_frames++;
     }
 
     pause_or_resume()
