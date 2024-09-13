@@ -57,12 +57,12 @@ class Canvas
 {
     constructor()
     {
-        this.canvas = null;
-        this.context = null;
-        this.plotting_scale = new Plotting_Scale();
+        this.canvas = undefined;
+        this.context = undefined;
+        this.plotting_scale = undefined;
     }
 
-    static from(canvas_name, plotting_scale)
+    static from(canvas_name, plotting_scale, pixel_rendering = false)
     {
         let canvas = document.getElementById(canvas_name);
         canvas.width = plotting_scale.canvas_size.x;
@@ -70,8 +70,9 @@ class Canvas
 
         let result = new Canvas();
         result.canvas = canvas;
-        result.context = canvas.getContext("2d");
+        result.context = (pixel_rendering ? canvas.getContext("2d", { willReadFrequently: true }) : canvas.getContext("2d"));
         result.plotting_scale = plotting_scale;
+
         return result;
     }
 
