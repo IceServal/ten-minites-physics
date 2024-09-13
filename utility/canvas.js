@@ -173,6 +173,18 @@ class Canvas
         this.context.resetTransform();
     }
 
+    render_text(text, position, color = "#000000", font = "16px Cascadia Code")
+    {
+        let context = this.context;
+        let plotting_scale = this.plotting_scale;
+
+        let p = plotting_scale.world_to_canvas(position);
+
+        context.font = font;
+        context.fillStyle = color;
+        context.fillText(text, p.x, p.y);
+    }
+
     window_to_canvas(position)
     {
         let canvas = this.canvas;
