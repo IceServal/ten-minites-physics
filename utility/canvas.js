@@ -172,5 +172,20 @@ class Canvas
         this._render_circle(Vector2.from_components(l,   0.0), r);
         this.context.resetTransform();
     }
+
+    window_to_canvas(position)
+    {
+        let canvas = this.canvas;
+        let bounds = canvas.getBoundingClientRect();
+        return Vector2.from_components(
+            position.x - bounds.left - canvas.clientLeft,
+            position.y - bounds.top - canvas.clientTop,
+        );
+    }
+
+    add_event_listener(event, listener, config)
+    {
+        this.canvas.addEventListener(event, listener, config);
+    }
 };
 
