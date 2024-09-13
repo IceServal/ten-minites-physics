@@ -6,9 +6,10 @@ class Clear_Acceleration_Field
         this.subjects = [];
     }
 
-    static from(acceleration)
+    static from(acceleration = Vector2.from_components())
     {
-        let result = new Clear_Acceleration_Field().acceleration.copy(acceleration);
+        let result = new Clear_Acceleration_Field();
+        result.acceleration.copy(acceleration);
         return result;
     }
 
