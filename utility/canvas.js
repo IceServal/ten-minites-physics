@@ -185,6 +185,33 @@ class Canvas
         context.fillText(text, p.x, p.y);
     }
 
+    render_grid(generator)
+    {
+        let canvas = this.canvas;
+        let context = this.context;
+        let plotting_scale = this.plotting_scale;
+
+        let width = canvas.width;
+        let height = canvas.height;
+        let image = context.getImageData(0, 0, width, height);
+        for (let data = generator(); data != undefined; data = generator()) {
+            let p0 = plotting_scale.world_to_canvas(data.point0);
+            let p1 = plotting_scale.world_to_canvas(data.point1);
+            let begin = p0.clone().elementwise_min(p1).floor();
+            let end = p0.clone().elementwise_max(p1).floor();
+            for (let y = begin.y; y < end.y; y++) {
+                let index = 4 * (y * width + begin.x);
+                for (let x = begin.x; x < end.x; x++) {
+                    image.data[index++] = data.color[0];
+                    image.data[index++] = data.color[1];
+                    image.data[index++] = data.color[2];
+                    image.data[index++] = data.color[3];
+                }
+            }
+        }
+        context.putImageData(image, 0, 0);
+    }
+
     window_to_canvas(position)
     {
         let canvas = this.canvas;
