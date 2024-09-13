@@ -6,7 +6,7 @@ class Vector2
         this.y = 0.0;
     }
 
-    static from_components(x, y)
+    static from_components(x = 0.0, y = 0.0)
     {
         let result = new Vector2().set_components(x, y);
         return result;
@@ -56,6 +56,13 @@ class Vector2
         return this;
     }
 
+    add_components(x, y, scaling = 1.0)
+    {
+        this.x += scaling * x;
+        this.y += scaling * y;
+        return this;
+    }
+
     subtract(a, scaling = 1.0)
     {
         this.x -= scaling * a.x;
@@ -67,6 +74,48 @@ class Vector2
     {
         this.x *= scaling;
         this.y *= scaling;
+        return this;
+    }
+
+    elementwise_min(a)
+    {
+        this.x = Math.min(this.x, a.x);
+        this.y = Math.min(this.y, a.y);
+        return this;
+    }
+
+    elementwise_max(a)
+    {
+        this.x = Math.max(this.x, a.x);
+        this.y = Math.max(this.y, a.y);
+        return this;
+    }
+
+    floor()
+    {
+        this.x = Math.floor(this.x);
+        this.y = Math.floor(this.y);
+        return this;
+    }
+
+    ceil()
+    {
+        this.x = Math.ceil(this.x);
+        this.y = Math.ceil(this.y);
+        return this;
+    }
+
+    round()
+    {
+        this.x = Math.round(this.x);
+        this.y = Math.round(this.y);
+        return this;
+    }
+
+    clamp(min = Vector2.from_components(), max = Vector2.from_components(1.0, 1.0))
+    {
+        this.x = Math.min(Math.max(this.x, min.x), max.x);
+        this.y = Math.min(Math.max(this.y, min.y), max.y);
         return this;
     }
 
@@ -85,8 +134,22 @@ class Vector2
 
     length()
     {
-        let length = Math.sqrt(this.dot(this));
-        return length;
+        return Math.sqrt(this.length_squared());
+    }
+
+    length_squared()
+    {
+        return this.dot(this);
+    }
+
+    distance_from(a)
+    {
+        return Math.sqrt(this.distance_squared_from(a));
+    }
+
+    distance_squared_from(a)
+    {
+        return Vector2.from_difference_of(this, a).length_squared();
     }
 
     angle()
