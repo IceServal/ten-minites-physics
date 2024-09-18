@@ -57,27 +57,36 @@ class Canvas
 {
     constructor()
     {
+        this.mode = "2d";
         this.canvas = undefined;
         this.context = undefined;
         this.plotting_scale = undefined;
     }
 
-    static from(canvas_name, plotting_scale, pixel_rendering = false)
+    static from(canvas_name, plotting_scale, pixel_rendering = false, mode = "2d")
     {
         let canvas = document.getElementById(canvas_name);
         canvas.width = plotting_scale.canvas_size.x;
         canvas.height = plotting_scale.canvas_size.y;
 
         let result = new Canvas();
+        result.mode = mode;
         result.canvas = canvas;
-        result.context = (pixel_rendering ? canvas.getContext("2d", { willReadFrequently: true }) : canvas.getContext("2d"));
+        result.context = result.canvas.getContext(result.mode, { willReadFrequently: pixel_rendering});
         result.plotting_scale = plotting_scale;
 
         return result;
     }
 
+    focus()
+    {
+        this.canvas.focus();
+    }
+
     clear()
     {
+        if (this.mode != "2d") return;
+
         this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
 

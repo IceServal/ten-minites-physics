@@ -24,6 +24,16 @@ class Vector2
         return result;
     }
 
+    static from_mix_of(a, b, ratio)
+    {
+        let one_minus_ratio = 1.0 - ratio;
+        let result = Vector2.from_components(
+            one_minus_ratio * a.x + ratio * b.x,
+            one_minus_ratio * a.y + ratio * b.y,
+        );
+        return result;
+    }
+
     clone()
     {
         let result = new Vector2().copy(this);
@@ -116,6 +126,14 @@ class Vector2
     {
         this.x = Math.min(Math.max(this.x, min.x), max.x);
         this.y = Math.min(Math.max(this.y, min.y), max.y);
+        return this;
+    }
+
+    mix_with(a, ratio)
+    {
+        let one_minus_ratio = 1.0 - ratio;
+        this.x = one_minus_ratio * this.x + ratio * a.x;
+        this.y = one_minus_ratio * this.y + ratio * a.y;
         return this;
     }
 

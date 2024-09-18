@@ -1,0 +1,289 @@
+<!--
+Copyright 2022 Matthias Müller - Ten Minute Physics, https://www.youtube.com/channel/UCTG_vrRdKYfrpqCv_WV4eyA
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
+
+<!DOCTYPE html>
+<html lang = "en">
+    <meta charset = "UTF-8" name = "viewport" content = "width = device-width, initial-scale = 1.0">
+
+    <head>
+        <title>FLIP Fluid</title>
+        <style>
+            body {
+                font-family: "Cascadia Code";
+                font-size: 15px;
+                fieldset {
+                    display: inline-block;
+                };
+                input[type = "range"] {
+                    height: 15px;
+                };
+            };
+            .button {
+                background-color: #606060;
+                border: none;
+                color: white;
+                padding: 10px 10px;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+            };
+            .slider {
+                appearance: none;
+                width: 80px;
+                height: 6px;
+                border-radius: 5px;
+                background: #D3D3D3;
+                outline: none;
+                opacity: 0.7;
+                transition: opacity 0.2s;
+            };
+        </style>
+    </head>
+
+    <body>
+        <fieldset>
+            <legend>Display</legend>
+            <label><input type = "checkbox" id = "grids" onclick = "show_grids()">Grids</label>
+            <label><input type = "checkbox" id = "obstacle" onclick = "show_obstacle()">Obstacle</label>
+            <label><input type = "checkbox" id = "particles" onclick = "show_particles()">Particles</label>
+		</fieldset>
+
+        <fieldset>
+            <legend>Correction</legend>
+            <label><input type = "checkbox" id = "compensate-drift" onclick = "compensate_drift()">Compensate Drift</label>
+            <label><input type = "checkbox" id = "separate-particles" onclick = "separate_particles()">Separate Particles</label>
+		</fieldset>
+
+        <fieldset>
+            <legend>Method Mix Ratio</legend>
+            <label for = "method-mix-ratio">PIC</label>
+            <input type = "range" min = "0" max = "10" value = "9" id = "method-mix-ratio">
+            <label for = "method-mix-ratio">FLIP</label>
+		</fieldset>
+
+        <br>
+        <br>
+        <canvas id = "canvas"></canvas>
+
+        <script src = "../utility/math/vector.js"></script>
+        <script src = "../utility/canvas.js"></script>
+        <script src = "./flip-fluid.js"></script>
+        <script>
+            let min_simulation_size = 1.0;
+            let canvas_size = Vector2.from_components(window.innerWidth - 10, window.innerHeight - 100);
+            let canvas_to_world_scale = min_simulation_size / Math.min(canvas_size.x, canvas_size.y);
+            let world_size = canvas_size.clone().scale(canvas_to_world_scale);
+
+            let resolution = 100;
+            let world_grid_length = Math.min(world_size.x, world_size.y) / resolution;
+            let world_grid_size = Vector2.from_components(
+                Math.floor(world_size.x / world_grid_length),
+                Math.floor(world_size.y / world_grid_length),
+            );
+            let world_to_canvas_scale = 1.0 / canvas_to_world_scale;
+            world_size = world_grid_size.clone().scale(world_grid_length);
+            canvas_size = world_size.clone().scale(world_to_canvas_scale);
+            let plotting_scale = Plotting_Scale.from(world_size, canvas_size, world_to_canvas_scale);
+            let canvas = Canvas.from("canvas", plotting_scale, false, "webgl");
+
+            let planck_time = 1.0 / 60.0;
+
+            let fluid_num_imcompresibility_substeps = 50;
+            let fluid_num_collision_substeps = 2;
+
+            let obstacle_radius = 0.08;
+            let obstacle_position = Vector2.from_components(0.8 * world_size.x, 0.8 * world_size.y);
+            let obstacle_velocity = Vector2.from_components();
+
+            let particle_radius = 0.3 * world_grid_length;
+
+            let gravity = Vector2.from_components(0.0, -9.81);
+
+            let fluid = undefined;
+
+            let paused = true;
+
+            function restart()
+            {
+                {
+                    let fluid_config = new FLIP_Fluid_Config();
+                    fluid_config.grid_size.copy(world_grid_size);
+                    fluid_config.grid_length = world_grid_length;
+                    fluid_config.num_imcompresibility_substeps = fluid_num_imcompresibility_substeps;
+                    fluid_config.num_collision_substeps = fluid_num_collision_substeps;
+                    fluid_config.world_min = Vector2.from_components(0.0, 0.0);
+                    fluid_config.world_max = Vector2.from_components(world_size.x, world_size.y);
+                    fluid_config.acceleration = gravity;
+
+                    let grid_size = fluid_config.grid_size;
+                    let default_x_weights = new Uint8Array((grid_size.x + 1) * grid_size.y);
+                    let default_y_weights = new Uint8Array(grid_size.x * (grid_size.y + 1));
+                    default_x_weights.fill(1);
+                    default_y_weights.fill(1);
+                    for (let i = 0; i < grid_size.y; i++) {
+                        let index = i * (grid_size.x + 1);
+                        default_x_weights[index] = 0;
+                        default_x_weights[index + grid_size.x] = 0;
+                    }
+                    let last = default_y_weights.length - 1;
+                    for (let i = 0; i < grid_size.x; i++) {
+                        default_y_weights[i] = 0;
+                        default_y_weights[last - i] = 0;
+                    }
+                    fluid_config.default_x_weights = default_x_weights;
+                    fluid_config.default_y_weights = default_y_weights;
+
+                    fluid = FLIP_Fluid.from(fluid_config);
+                    fluid.load_obstacle(obstacle_radius, obstacle_position, obstacle_velocity);
+                    fluid.load_shading_resources(canvas);
+
+                    document.getElementById("grids").checked = fluid.show_grids;
+                    document.getElementById("obstacle").checked = fluid.show_obstacle;
+                    document.getElementById("particles").checked = fluid.show_particles;
+                    document.getElementById("compensate-drift").checked = fluid.compensate_drift;
+                    document.getElementById("separate-particles").checked = fluid.separate_particles;
+                    document.getElementById("method-mix-ratio").value = fluid.method_mix_ratio * 10;
+                }
+
+                {
+                    let dx = 2.0 * particle_radius;
+                    let dy = Math.sqrt(3.0) / 2.0 * dx;
+                    let particle_range = Vector2.from_components(0.6 * world_size.x, 0.8 * world_size.y);
+                    let num_particles_align_x_axis = Math.floor(particle_range.x / dx);
+                    let num_particles_align_y_axis = Math.floor(particle_range.y / dy);
+                    let num_particles = num_particles_align_x_axis * num_particles_align_y_axis;
+                    let positions = new Float32Array(num_particles * 2);
+                    let velocities = new Float32Array(num_particles * 2);
+                    velocities.fill(0.0);
+                    let index = 0;
+                    for (let i = 0; i < num_particles_align_x_axis; i++) {
+                        for (let j = 0; j < num_particles_align_y_axis; j++) {
+                            positions[index++] = dx + particle_radius + i * dx + (j % 2 == 0 ? 0.0 : particle_radius);
+                            positions[index++] = dy + particle_radius + j * dy;
+                        }
+                    }
+                    fluid.load_particles(particle_radius, positions, velocities);
+                }
+            }
+
+            function show_grids()
+            {
+                fluid.show_grids = !fluid.show_grids;
+            }
+
+            function show_obstacle()
+            {
+                fluid.show_obstacle = !fluid.show_obstacle;
+            }
+
+            function show_particles()
+            {
+                fluid.show_particles = !fluid.show_particles;
+            }
+
+            function compensate_drift()
+            {
+                fluid.compensate_drift = !fluid.compensate_drift;
+            }
+
+            function separate_particles()
+            {
+                fluid.separate_particles = !fluid.separate_particles;
+            }
+
+            function mainloop()
+            {
+                if (!paused) fluid.update(planck_time);
+                fluid.render(canvas);
+
+                requestAnimationFrame(mainloop);
+            }
+
+            restart();
+            mainloop();
+
+            document.getElementById("method-mix-ratio").oninput = function () {
+                fluid.method_mix_ratio = this.value / 10.0;
+            };
+            document.addEventListener("keydown", event => {
+                switch (event.key) {
+                    case 'p': {
+                        paused = !paused;
+                        break;
+                    }
+
+                    case 'm': {
+                        paused = true;
+                        fluid.update(planck_time);
+                        break;
+                    }
+                }
+            });
+
+            let grabbing = false;
+
+            function grab(position)
+            {
+                grabbing = true;
+
+                paused = false;
+
+                let position_world = canvas.plotting_scale.canvas_to_world(canvas.window_to_canvas(position));
+                fluid.obstacle.position.copy(position_world);
+            }
+
+            function move(position)
+            {
+                if (!grabbing) return;
+
+                paused = false;
+
+                let position_world = canvas.plotting_scale.canvas_to_world(canvas.window_to_canvas(position));
+                let obstacle_position = fluid.obstacle.position;
+                let obstacle_velocity = fluid.obstacle.velocity;
+                obstacle_velocity.copy(position_world.clone().subtract(obstacle_position).scale(1.0 / planck_time));
+                obstacle_position.copy(position_world);
+            }
+
+            function drop(position)
+            {
+                grabbing = false;
+            }
+
+            canvas.add_event_listener("mousedown", event => {
+                grab(Vector2.from_components(event.x, event.y));
+            });
+            canvas.add_event_listener("mousemove", event => {
+                move(Vector2.from_components(event.x, event.y));
+            });
+            canvas.add_event_listener("mouseup", event => {
+                drop(Vector2.from_components(event.x, event.y));
+            });
+            canvas.add_event_listener("touchstart", event => {
+                grab(Vector2.from_components(event.touches[0].clientX, event.touches[0].clientY));
+            });
+            canvas.add_event_listener(
+                "touchmove",
+                event => {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    move(Vector2.from_components(event.touches[0].clientX, event.touches[0].clientY));
+                },
+                {
+                    passive: false
+                },
+            );
+            canvas.add_event_listener("touchend", event => {
+                drop(Vector2.from_components(event.touches[0].clientX, event.touches[0].clientY));
+            });
+        </script>
+    </body>
+</html>
+
