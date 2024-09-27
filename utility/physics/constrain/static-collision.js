@@ -7,6 +7,12 @@ class Static_Collision
         this.subjects = [];
     }
 
+    static from()
+    {
+        let result = new Static_Collision();
+        return result;
+    }
+
     clone()
     {
         let result = new Static_Collision().copy(this);
@@ -32,6 +38,8 @@ class Static_Collision
         this._collide_with_static_capsules(kinematic_body);
     }
 
+    prepare() {}
+
     apply()
     {
         let subjects = this.subjects;
@@ -39,6 +47,8 @@ class Static_Collision
             this.act_on(subjects[i]);
         }
     }
+
+    finalize() {}
 
     render(canvas) {}
 
